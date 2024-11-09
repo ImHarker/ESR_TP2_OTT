@@ -3,8 +3,6 @@ using Avalonia.Media.Imaging;
 using System.IO;
 using System.Net.Sockets;
 using System;
-using System.Threading;
-using Avalonia;
 using ESR.Shared;
 
 namespace Client.Views;
