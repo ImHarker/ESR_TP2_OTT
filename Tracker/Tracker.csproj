@@ -15,4 +15,15 @@
     <None Remove="NewFile1.txt" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Remove="NodeNet.json" />
+    <Content Include="NodeNet.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Shared\Shared.csproj" />
+  </ItemGroup>
+
 </Project>
