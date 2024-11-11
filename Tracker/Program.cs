@@ -2,46 +2,27 @@
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using ESR.Shared;
 
 namespace ESR.Tracker
 {
-    public struct NodeResponse
-    {
-        [JsonPropertyName("connections")]
-        public string[] Connections { get; init; }
-        [JsonPropertyName("isPOP")]
-        public bool IsPOP { get; init; }
-    }
-    
-    public struct Node
-    {
-        [JsonPropertyName("ip")]
-        public string IpAddress { get; init; }
-        [JsonPropertyName("connections")]
-        public string[] Connections { get; init; }
-        [JsonPropertyName("isPOP")]
-        public bool IsPOP { get; init; }
-    }
-    
-    public struct NodeNet
-    {
-        [JsonPropertyName("nodes")]
-        public Node[] Nodes { get; init; }
-    }
-    
     internal static class Program
     {
         private static NodeNet nodeNet;
+        private static NetworkGraph networkGraph;
         private static List<TcpClient> tcpClients = [];
-        
+
         private static async Task Main()
         {
-            var json = await File.ReadAllTextAsync("NodeNet.json");
-            nodeNet = JsonSerializer.Deserialize<NodeNet>(json);
-
+            BootstrapGraph();
             await Listen();
+        }
+
+        private static void BootstrapGraph()
+        {
+            var json = File.ReadAllText("NodeNet.json");
+            nodeNet = JsonSerializer.Deserialize<NodeNet>(json);
+            networkGraph = new NetworkGraph(nodeNet);
         }
 
         private static async Task Listen()
@@ -49,16 +30,23 @@ namespace ESR.Tracker
             var ipEndPoint = new IPEndPoint(IPAddress.Any, Consts.TcpPort);
             var listener = new TcpListener(ipEndPoint);
             listener.Start();
-            
+
             while (true)
             {
                 try
                 {
-                    Console.WriteLine("[Listener] Waiting for connection...");
                     tcpClients.Add(await listener.AcceptTcpClientAsync());
-                    Console.WriteLine($"[Listener] Connected to client {tcpClients[^1].Client.RemoteEndPoint}");
-                    
-                    _ = Task.Run(() => HandleClientConnection(tcpClients[^1]));
+
+                    var friendly = networkGraph.Nodes.Find(node => node.Id == Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClients[^1])!));
+                    if (friendly == null)
+                    {
+                        Console.WriteLine($"[Listener] Node {tcpClients[^1].Client.RemoteEndPoint} is not a friendly node. Closing connection...");
+                        tcpClients[^1].Close();
+                    }
+                    else
+                    {
+                        _ = Task.Run(() => HandleNodeConnection(tcpClients[^1]));
+                    }
                 }
                 catch (Exception e)
                 {
@@ -67,7 +55,7 @@ namespace ESR.Tracker
             }
         }
 
-        private static async Task HandleClientConnection(TcpClient tcpClient)
+        private static async Task HandleNodeConnection(TcpClient tcpClient)
         {
             try
             {
@@ -112,6 +100,7 @@ namespace ESR.Tracker
                                     Console.WriteLine($"[Listener] Client {tcpClient.Client.RemoteEndPoint} requested nodes but is not in the list");
                                     await stream.WriteAsync("[]"u8.ToArray());
                                 }
+
                                 break;
                             default:
                                 Console.WriteLine($"[Listener] Unknown OpCode: {opCode}");

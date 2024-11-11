@@ -37,19 +37,12 @@
     },
     {
       "ip": "10.0.0.2",
-      "connections": ["10.0.1.2", "10.0.3.2", "10.0.0.1"],
+      "connections": ["10.0.1.2", "10.0.2.2", "10.0.0.1"],
       "isPOP": false
     },
     {
       "ip": "10.0.0.1",
       "connections": ["10.0.0.2"],
-      "isPOP": true
-    },
-    {
-      "ip": "127.0.0.1",
-      "connections": [
-        "Cu grande"
-      ],
       "isPOP": true
     }
   ]

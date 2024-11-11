@@ -15,7 +15,7 @@ namespace ESR.Node
 			var stream = _tcpClient.GetStream();
 			stream.WriteByte(0x03);
 			
-			while (true)
+			while (_tcpClient.Connected)
 			{
 				if (stream.DataAvailable)
 				{
