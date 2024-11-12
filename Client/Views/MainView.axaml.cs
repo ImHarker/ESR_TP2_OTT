@@ -9,10 +9,12 @@ namespace Client.Views;
 
 public partial class MainView : UserControl
 {
+    private PacketBuilder m_PacketBuilder = new();
+    
     private const int c_Port = 5000;
-    private UdpClient _udpClient;
-    private TcpClient _tcpClient;
-    private bool _isRunning = true;
+    private UdpClient m_UdpClient;
+    private TcpClient m_TcpClient;
+    private bool m_IsRunning = true;
     
     public MainView()
     {
@@ -23,13 +25,13 @@ public partial class MainView : UserControl
     
     private async void StartUdpStream()
     {
-        _udpClient = new UdpClient(Consts.UdpPort + 1);
+        m_UdpClient = new UdpClient(Consts.UdpPort + 1);
 
         try
         {
-            while (_isRunning)
+            while (m_IsRunning)
             {
-                var result = await _udpClient.ReceiveAsync();
+                var result = await m_UdpClient.ReceiveAsync();
                 var frameBuffer = result.Buffer;
 
                 DisplayFrame(frameBuffer);
@@ -55,18 +57,20 @@ public partial class MainView : UserControl
 
     public void Close()
     {
-        _isRunning = false;
-        _udpClient.Close();
-        _tcpClient.Close();
+        m_IsRunning = false;
+        m_UdpClient.Close();
+        m_TcpClient.Close();
     }
 
     private void AskServerForVideo()
     {
         Console.WriteLine("Asking server for video...");
-        _tcpClient = new TcpClient();
-        _tcpClient.Connect("127.0.0.1", Consts.TcpPort);
-
-        var stream = _tcpClient.GetStream();
-        stream.WriteByte(0x01);
+        NetworkMessenger.Send("127.0.0.1", Consts.TcpPort, OpCodes.StartStreaming);
+        
+        // m_TcpClient = new TcpClient();
+        // m_TcpClient.Connect("127.0.0.1", Consts.TcpPort);
+        //
+        // var stream = m_TcpClient.GetStream();
+        // stream.WriteByte((byte)OpCodes.StartStreaming);
     }
 }

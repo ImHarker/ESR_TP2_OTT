@@ -6,7 +6,7 @@ public class NetworkGraph
     {
         public struct Connection
         {
-            public int OtherNode { get; init; }
+            public int Id { get; init; }
             public int Weight { get; set; }
         }
 
@@ -16,6 +16,26 @@ public class NetworkGraph
             public List<Connection> Connections { get; init; } = [];
         }
 
+        public void AddNode(string ip, List<string> connections)
+        {
+            var node = new Node
+            {
+                Id = Utils.IpToInt32(ip),
+                Connections = []
+            };
+
+            foreach (var connection in connections)
+            {
+                node.Connections.Add(new Connection
+                {
+                    Id = Utils.IpToInt32(connection),
+                    Weight = Random.Shared.Next(1, 25)
+                });
+            }
+
+            Nodes.Add(node);
+        }
+        
         public NetworkGraph(NodeNet nodeNet)
         {
             for (var i = 0; i < nodeNet.Nodes.Length; i++)
@@ -28,13 +48,13 @@ public class NetworkGraph
 
                 foreach (var connection in nodeNet.Nodes[i].Connections)
                 {
-                    Node? existingNode = Nodes.Find(n => n.Id == Utils.IpToInt32(connection));
+                    var existingNode = Nodes.Find(n => n.Id == Utils.IpToInt32(connection));
                     // TODO - Implement Weighted Connections
-                    var weight = existingNode == null ? Random.Shared.Next(1, 25) : existingNode.Connections.Find(c => c.OtherNode == node.Id).Weight;
+                    var weight = existingNode == null ? Random.Shared.Next(1, 25) : existingNode.Connections.Find(c => c.Id == node.Id).Weight;
                     
                     node.Connections.Add(new Connection
                     {
-                        OtherNode = Utils.IpToInt32(connection),
+                        Id = Utils.IpToInt32(connection),
                         Weight = weight
                     });
                 }
@@ -76,12 +96,11 @@ public class NetworkGraph
             var current = startNode;
             unvisited.Remove(current);
             
-            Console.WriteLine("Starting Dijkstra's Algorithm");
             while (unvisited.Count > 0)
             {
                 foreach (var connection in current.Connections)
                 {
-                    if (!TryGetNode(connection.OtherNode, out var otherNode)) continue;
+                    if (!TryGetNode(connection.Id, out var otherNode)) continue;
                     if (!unvisited.Contains(otherNode)) continue;
 
                     var newDistance = distances[current] + connection.Weight;
@@ -108,8 +127,6 @@ public class NetworkGraph
             current = endNode;
             shortestPath.Add(current);
 
-            // TODO - Handle cases when there is no back path
-            Console.WriteLine("Finding Shortest Path from End to Start");
             Node? lastNode = null;
             while (current.Id != start)
             {
@@ -121,7 +138,7 @@ public class NetworkGraph
                 
                 foreach (var connection in current.Connections)
                 {
-                    if (!TryGetNode(connection.OtherNode, out var otherNode)) continue;
+                    if (!TryGetNode(connection.Id, out var otherNode)) continue;
                     if (distances[otherNode] != distances[current] - connection.Weight) continue;
                     shortestPath.Add(otherNode);
                     current = otherNode;
@@ -138,6 +155,18 @@ public class NetworkGraph
             return shortestPath;
         }
 
+        public void UpdateWeights(string parent, string child, int weight)
+        {
+            if (!TryGetNode(Utils.IpToInt32(parent), out var parentNode)) return;
+            for (var i = 0; i < parentNode.Connections.Count; i++)
+            {
+                var con = parentNode.Connections[i];
+                if (con.Id != Utils.IpToInt32(child)) continue;
+                con.Weight = weight;
+                parentNode.Connections[i] = con;
+            }
+        }
+        
         private bool TryGetNode(int id, out Node result)
         {
             foreach (var node in Nodes)
