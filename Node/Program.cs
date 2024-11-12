@@ -6,24 +6,63 @@ namespace ESR.Node
 {
 	internal static class Program
 	{
-		private static void Main()
+		public static List<string> Connections = [];
+		
+		private static async Task Main()
 		{
-			Console.WriteLine("Asking Tracker For Nearby Nodes...");
-			var _tcpClient = new TcpClient();
-			_tcpClient.Connect("127.0.0.1", Consts.TcpPort);
+			Console.WriteLine("[Tracker] Asking Tracker For Nearby Nodes...");
 
-			var stream = _tcpClient.GetStream();
-			stream.WriteByte(0x03);
-			
-			while (_tcpClient.Connected)
+			await Bootstrap();
+
+			if (Connections.Count == 0)
 			{
-				if (stream.DataAvailable)
-				{
-					var buffer = new byte[1024];
-					_ = stream.Read(buffer, 0, buffer.Length);
-					Console.WriteLine(Encoding.UTF8.GetString(buffer));
-				}
+				throw new Exception("[Tracker] No nodes found.");
 			}
+			
+			var heartBeatSender = new Thread(HeartBeatSender);
+			heartBeatSender.Start();
+			var heartBeatListener = new Thread(HeartBeatListener);
+			heartBeatListener.Start();
+		}
+
+		private static async Task Bootstrap()
+		{
+			var tcpClient = new TcpClient();
+			await tcpClient.ConnectAsync(Consts.TrackerIpAddress, Consts.TcpPort);
+			
+			var stream = tcpClient.GetStream();
+			stream.WriteByte((byte)OpCodes.GetNodes);
+			
+			var start = Time.Now;
+			
+			while (tcpClient.Connected)
+			{
+				if (Time.Now - start > TimeSpan.FromMilliseconds(Consts.Timeout))
+				{
+					tcpClient.Close();
+					throw new Exception("[Tracker] Connection to bootstrapper timed out.");
+				}
+				if (!stream.DataAvailable) continue;
+				
+				var buffer = new byte[1024];
+				_ = stream.Read(buffer, 0, buffer.Length);
+				Console.WriteLine(Encoding.UTF8.GetString(buffer));
+				break;
+			}
+		}
+
+		private static void HeartBeatSender()
+		{
+			var udpClient = new UdpClient(Consts.UdpPortHeartbeat);
+			
+			
+		}
+		
+		private static void HeartBeatListener()
+		{
+			var udpClient = new UdpClient(Consts.UdpPortHeartbeatResponse);
+			
+			
 		}
 	}
 }
