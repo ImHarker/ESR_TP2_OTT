@@ -2,63 +2,119 @@ using System.Net.Sockets;
 
 namespace ESR.Shared;
 
+public class Response(PacketReader reader)
+{
+    public OpCodes OpCode { get; init; } = reader.OpCode;
+    public string[] Arguments { get; init; } = reader.Arguments;
+}
+
 public static class NetworkMessenger
 {
-    public class Response(PacketReader reader)
-    {
-        public OpCodes OpCode { get; init; } = reader.OpCode;
-        public string[] Arguments { get; init; } = reader.Arguments;
-    }
+    #region TCP
     
-    public static Response Get(string ip, int port, OpCodes opCode, params string[] args)
+    public static Dictionary<int, TcpClient> TcpClients { get; } = new();
+    private static Dictionary<int, UdpClient> UdpClients { get; } = new();
+    
+    public static Response Get(string ip, int port, OpCodes opCode, bool dispose, params string[] args)
     {
         var client = SendInternal(ip, port, opCode, args);
-        return new Response(new PacketReader(client.GetStream()));
+        var response = new Response(new PacketReader(client.GetStream()));
+        if (dispose) DisposeTcpClient(ip);
+        return response;
     }
-    
-    public static async Task<Response> GetAsync(string ip, int port, OpCodes opCode, params string[] args)
+
+    public static async Task<Response> GetAsync(string ip, int port, OpCodes opCode, bool dispose, params string[] args)
     {
         var client = await SendAsyncInternal(ip, port, opCode, args);
-        return new Response(new PacketReader(client.GetStream()));
+        var response = new Response(new PacketReader(client.GetStream()));
+        if (dispose) DisposeTcpClient(ip);
+        return response;
     }
-    
-    public static void Send(string ip, int port, OpCodes opCode, params string[] args)
+
+    public static void Send(string ip, int port, OpCodes opCode, bool dispose, params string[] args)
     {
         SendInternal(ip, port, opCode, args);
+        if (dispose) DisposeTcpClient(ip);
     }
-    
-    public static async Task SendAsync(string ip, int port, OpCodes opCode, params string[] args)
+
+    public static async Task SendAsync(string ip, int port, OpCodes opCode, bool dispose, params string[] args)
     {
         await SendAsyncInternal(ip, port, opCode, args);
+        if (dispose) DisposeTcpClient(ip);
     }
-    
+
     private static TcpClient SendInternal(string ip, int port, OpCodes opCode, params string[] args)
     {
-        var client = new TcpClient(ip, port);
-        using var stream = client.GetStream();
+        var client = EstablishTcpConnection(ip, port); 
         var packetBuilder = new PacketBuilder().WriteOpCode(opCode);
-        
+
         for (var i = 0; i < args.Length; i++)
         {
             packetBuilder.WriteArgument(args[i]);
         }
-        
-        stream.Write(packetBuilder.Packet);
+
+        client.GetStream().Write(packetBuilder.Packet);
         return client;
     }
-    
+
     private static async Task<TcpClient> SendAsyncInternal(string ip, int port, OpCodes opCode, params string[] args)
     {
-        var client = new TcpClient(ip, port);
-        await using var stream = client.GetStream();
+        var client = EstablishTcpConnection(ip, port);
+        var stream = client.GetStream();
         var packetBuilder = new PacketBuilder().WriteOpCode(opCode);
-        
+
         for (var i = 0; i < args.Length; i++)
         {
             packetBuilder.WriteArgument(args[i]);
         }
-        
+
         await stream.WriteAsync(packetBuilder.Packet);
         return client;
     }
+
+    private static TcpClient EstablishTcpConnection(string ip, int port)
+    {
+        if (TcpClients.TryGetValue(Utils.IpToInt32(ip), out var tcpClient))
+        {
+            Console.WriteLine(tcpClient);
+            return tcpClient;
+        }
+
+        Console.WriteLine("Establishing TCP connection... to " + ip);
+        
+        var client = new TcpClient(ip, port);
+        TcpClients[Utils.IpToInt32(ip)] = client;
+        return client;
+    }
+
+    public static void DisposeTcpClient(string ip)
+    {
+        if (TcpClients.Remove(Utils.IpToInt32(ip), out var client))
+        {
+            client.Close();
+        }
+    }
+    
+    #endregion
+    
+    #region UDP
+
+    public static void StartUdpClient(int port, Func<UdpClient, Task> action)
+    {
+        if (UdpClients.TryGetValue(port, out _)) return;
+        
+        var udpClient = new UdpClient(port);
+        UdpClients[port] = udpClient;
+        _ = action(udpClient);
+    }
+    
+    public static void DisposeUdpClient(int port)
+    {
+        if (TcpClients.Remove(port, out var client))
+        {
+            client.Close();
+        }
+    }
+        
+    #endregion
 }

@@ -169,8 +169,9 @@ public class NetworkGraph
         
         private bool TryGetNode(int id, out Node result)
         {
-            foreach (var node in Nodes)
+            for (var i = 0; i < Nodes.Count; i++)
             {
+                var node = Nodes[i];
                 if (node.Id != id) continue;
                 result = node;
                 return true;
