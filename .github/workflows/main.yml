@@ -36,7 +36,7 @@ jobs:
         ' --tag-name-filter cat -- --branches --tags
 
     - name: Temporarily remove .github/workflows directory
-      run: git filter-branch --tree-filter 'rm -rf .github/workflows' HEAD  # Remove workflows de todos os commits
+      run: git filter-repo --path .github/workflows --invert-paths
 
     - name: Add public repo as remote
       run: |
