@@ -4,7 +4,10 @@ on:
   push:
     branches:
       - main  # Branch para monitorar
-
+      
+permissions:
+  contents: write
+  
 jobs:
   mirror:
     runs-on: ubuntu-latest
