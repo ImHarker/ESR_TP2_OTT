@@ -3,7 +3,7 @@ name: Mirror to Public Repo
 on:
   push:
     branches:
-      - main  # Branch to monitor for pushes
+      - main
 
 jobs:
   mirror:
@@ -17,9 +17,10 @@ jobs:
 
     - name: Set up Git for pushing to public repo
       run: |
-        git config user.name "ImHarker"
-        git config user.email "pg55096@uminho.pt"
-    
+        git config --global user.name "ImHarker"
+        git config --global user.email "pg55096@uminho.pt"
+        git config --global url."https://${{ secrets.ESR_DESK }}@github.com".insteadOf "https://github.com"
+
     - name: Update commit author and committer info
       run: |
         git filter-branch --env-filter '
