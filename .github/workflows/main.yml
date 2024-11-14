@@ -3,7 +3,7 @@ name: Mirror to Public Repo
 on:
   push:
     branches:
-      - main
+      - main  # Branch para monitorar
 
 jobs:
   mirror:
@@ -13,13 +13,12 @@ jobs:
     - name: Checkout private repository
       uses: actions/checkout@v3
       with:
-        fetch-depth: 0  # Fetch all history for accurate commit history
+        fetch-depth: 0  # Busca todo o histórico
 
     - name: Set up Git for pushing to public repo
       run: |
         git config --global user.name "ImHarker"
         git config --global user.email "pg55096@uminho.pt"
-        git config --global url."https://${{ secrets.ESR_DESK }}@github.com".insteadOf "https://github.com"
 
     - name: Update commit author and committer info
       run: |
@@ -37,11 +36,13 @@ jobs:
 
     - name: Add public repo as remote
       run: |
-        git remote add public https://${{ secrets.ESR_DESK }}@github.com/ImHarker/ESR_TP2_OTT.git
+        # Adiciona o repositório público como remoto, incluindo o token de acesso pessoal
+        git remote add public https://x-access-token:${{ secrets.ESR_DESK }}@github.com/ImHarker/ESR_TP2_OTT.git
         git fetch public
 
     - name: Push to public repository without workflows
       run: |
+        # Push para o repositório público
         git push --mirror public
 
     - name: Restore workflows directory for private repository
