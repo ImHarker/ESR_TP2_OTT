@@ -28,8 +28,6 @@ public partial class MainView : UserControl
             {
                 while (m_IsRunning)
                 {
-                    Console.WriteLine(NetworkMessenger.TcpClients.Count);
-
                     var result = await client.ReceiveAsync();
                     var frameBuffer = result.Buffer;
 
@@ -58,11 +56,11 @@ public partial class MainView : UserControl
     {
         m_IsRunning = false;
         NetworkMessenger.DisposeUdpClient(Consts.UdpPort + 1);
-        NetworkMessenger.DisposeTcpClient("127.0.0.1");
+        NetworkMessenger.DisposeTcpClient(Consts.StreamerIpAddress);
     }
 
     private static void AskServerForVideo()
     {
-        NetworkMessenger.Send("127.0.0.1", Consts.TcpPort, OpCodes.StartStreaming, false);
+        NetworkMessenger.Send(Consts.StreamerIpAddress, Consts.TcpPort, OpCodes.StartStreaming, false);
     }
 }
