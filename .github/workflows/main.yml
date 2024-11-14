@@ -1,0 +1,51 @@
+name: Mirror to Public Repo
+
+on:
+  push:
+    branches:
+      - main  # Branch para monitorar
+      
+permissions:
+  contents: write
+  
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout private repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Busca todo o histórico
+        token: ${{ secrets.ESR_DESK }}
+
+    - name: Set up Git for pushing to public repo
+      run: |
+        git config --global user.name "ImHarker"
+        git config --global user.email "pg55096@uminho.pt"
+
+    - name: Update commit author and committer info
+      run: |
+        git filter-branch --env-filter '
+        if [ "$GIT_AUTHOR_NAME" != "ImHarker" ]; then
+            GIT_AUTHOR_NAME="ImHarker"
+            GIT_AUTHOR_EMAIL="pg55096@uminho.pt"
+            GIT_COMMITTER_NAME="ImHarker"
+            GIT_COMMITTER_EMAIL="pg55096@uminho.pt"
+        fi
+        ' --tag-name-filter cat -- --branches --tags
+
+    - name: Temporarily remove .github/workflows directory
+      run: | 
+        git filter-branch -f --tree-filter 'rm -rf .github/workflows' HEAD
+
+    - name: Add public repo as remote
+      run: |
+        # Adiciona o repositório público como remoto, incluindo o token de acesso pessoal
+        git remote add public https://x-access-token:${{ secrets.ESR_DESK }}@github.com/ImHarker/ESR_TP2_OTT.git
+        git fetch public
+
+    - name: Push to public repository without workflows
+      run: |
+        # Push para o repositório público
+        git push --mirror public
