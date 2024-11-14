@@ -67,7 +67,7 @@ public static class NetworkMessenger
         {
             packetBuilder.WriteArgument(args[i]);
         }
-
+        
         await stream.WriteAsync(packetBuilder.Packet);
         return client;
     }

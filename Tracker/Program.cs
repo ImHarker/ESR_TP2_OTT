@@ -1,6 +1,5 @@
 ﻿using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Text.Json;
 using ESR.Shared;
 
@@ -57,23 +56,25 @@ namespace ESR.Tracker
 
         private static async Task HandleNodeConnection(TcpClient tcpClient)
         {
+            Console.Write("[Listener] Handling Node Connection");
             try
             {
                 var stream = tcpClient.GetStream();
-                var buffer = new byte[1024];
 
                 while (true)
                 {
-                    int bytesToRead = stream.Read(buffer, 0, buffer.Length);
-                    if (bytesToRead == 0)
+                    _ = new PacketReader(stream).GetOpCode(out var opCode).GetArguments(out _);
+                    
+                    Console.WriteLine($"[Listener] Received OpCode: {opCode:X} - {opCode}");
+                    
+                    if (opCode == OpCodes.Disconnect)
                     {
                         Console.WriteLine($"[Listener] Client {tcpClient.Client.RemoteEndPoint} disconnected");
                         break;
                     }
-                    else if (bytesToRead == 1)
+                    else
                     {
-                        var opCode = buffer[0];
-                        switch ((OpCodes)opCode)
+                        switch (opCode)
                         {
                             case OpCodes.GetNodes:
                                 var found = false;
@@ -87,9 +88,8 @@ namespace ESR.Tracker
                                     if (node.IpAddress == Utils.GetIPAddressFromTcpClient(tcpClient))
                                     {
                                         Console.WriteLine($"[Listener] Node {tcpClient.Client.RemoteEndPoint} requested nodes");
-                                        var json = JsonSerializer.Serialize(connections);
-                                        var response = Encoding.UTF8.GetBytes(json);
-                                        await stream.WriteAsync(response, 0, response.Length);
+                                        var packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.GetNodes).WriteArgument(JsonSerializer.Serialize(connections));
+                                        stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
                                         found = true;
                                         break;
                                     }
@@ -100,7 +100,6 @@ namespace ESR.Tracker
                                     Console.WriteLine($"[Listener] Client {tcpClient.Client.RemoteEndPoint} requested nodes but is not in the list");
                                     await stream.WriteAsync("[]"u8.ToArray());
                                 }
-
                                 break;
                             default:
                                 Console.WriteLine($"[Listener] Unknown OpCode: {opCode}");
