@@ -42,8 +42,6 @@ jobs:
     - name: Push to public repository without workflows
       run: |
         git push --mirror public
-      env:
-        GITHUB_TOKEN: ${{ secrets.ESR_DESK }}
 
     - name: Restore workflows directory for private repository
       if: always()
