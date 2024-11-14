@@ -34,13 +34,14 @@ public class PacketReader(NetworkStream stream)
         {
             _ = OpCode;
             
-            if (m_Arguments.Count >= m_ArgumentCount)
+            if (m_ArgumentCount >= 0 && m_Arguments.Count >= m_ArgumentCount)
             {
                 return m_Arguments.ToArray();
             }
             
             ReadArguments(out var args);
             m_Arguments = args.ToList();
+            
             return args;
         }
     }
@@ -55,28 +56,22 @@ public class PacketReader(NetworkStream stream)
     private void ReadArguments(out string[] args)
     {
         _ = OpCode;
-        if (m_ArgumentCount == -1)
-        {
-            m_ArgumentCount = m_Stream.ReadByte();
-            Console.WriteLine($"[PacketReader] Argument Count: {m_ArgumentCount}");
-        }
+        if (m_ArgumentCount == -1) m_ArgumentCount = m_Stream.ReadByte();
         if (m_Arguments.Count >= m_ArgumentCount)
         {
             args = m_Arguments.ToArray();
             return;
         }
         
-        args = new string[m_Arguments.Count];
+        args = new string[m_ArgumentCount];
         for (var i = 0; i < m_ArgumentCount; i++)
         {
-            var lengthBuffer = new byte[4];
-            _ = m_Stream.Read(lengthBuffer, 0, 4);
-            Console.WriteLine($"[PacketReader] Argument Length: {BitConverter.ToInt32(lengthBuffer)}");
-            var length = BitConverter.ToInt32(lengthBuffer);
+            var lengthBuffer = new byte[2];
+            _ = m_Stream.Read(lengthBuffer, 0, 2);
+            var length = BitConverter.ToInt16(lengthBuffer);
             var buffer = new byte[length];
             _ = m_Stream.Read(buffer, 0, buffer.Length);
             args[i] = Encoding.UTF8.GetString(buffer);
-            Console.WriteLine($"[PacketReader] Argument: {args[i]}");
         }
         
         m_Arguments = args.ToList();
@@ -85,7 +80,6 @@ public class PacketReader(NetworkStream stream)
     private void ReadOpCode(out OpCodes opCode)
     {
         m_OpCode ??= (OpCodes)m_Stream.ReadByte();
-        Console.WriteLine($"[PacketReader] OpCode: {m_OpCode:X} - {m_OpCode}");
         opCode = m_OpCode ?? throw new InvalidOperationException("[PacketReader] Invalid OpCode");
     }
 }

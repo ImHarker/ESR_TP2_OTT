@@ -71,12 +71,12 @@ namespace ESR.Streamer
                             break;
                         }
 
-                        if ((OpCodes)opCode != OpCodes.None)
+                        if (opCode != OpCodes.None)
                         {
                             Console.WriteLine($"[Listener] Received OpCode: {opCode:X} - {opCode}");
                         }
 
-                        switch ((OpCodes)opCode)
+                        switch (opCode)
                         {
                             case OpCodes.None:
                                 break;

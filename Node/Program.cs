@@ -1,5 +1,6 @@
 ﻿using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using ESR.Shared;
 
 namespace ESR.Node
@@ -8,15 +9,23 @@ namespace ESR.Node
 	{
 		public static List<string> Connections = [];
 		
-		private static async Task Main()
+		private static void Main()
 		{
 			Console.WriteLine("[Tracker] Asking Tracker For Nearby Nodes...");
 
-			await Bootstrap();
+			Bootstrap();
 
 			if (Connections.Count == 0)
 			{
 				throw new Exception("[Tracker] No nodes found.");
+			}
+			else
+			{
+				Console.WriteLine("[Tracker] Found nodes:");
+				foreach (var connection in Connections)
+				{
+					Console.WriteLine(connection);
+				}
 			}
 			
 			var heartBeatSender = new Thread(HeartBeatSender);
@@ -25,29 +34,18 @@ namespace ESR.Node
 			heartBeatListener.Start();
 		}
 
-		private static async Task Bootstrap()
+		private static void Bootstrap()
 		{
-			var tcpClient = new TcpClient();
-			await tcpClient.ConnectAsync(Consts.TrackerIpAddress, Consts.TcpPort);
-			
-			var stream = tcpClient.GetStream();
-			stream.WriteByte((byte)OpCodes.GetNodes);
-			
-			var start = Time.Now;
-			
-			while (tcpClient.Connected)
+			var response = NetworkMessenger.Get(Consts.TrackerIpAddress, Consts.TcpPort, OpCodes.GetNodes, false);
+			var args = response.Arguments;
+			List<NodeResponse> nodeResponse = [];
+			foreach(var arg in args)
 			{
-				if (Time.Now - start > TimeSpan.FromMilliseconds(Consts.Timeout))
-				{
-					tcpClient.Close();
-					throw new Exception("[Tracker] Connection to bootstrapper timed out.");
-				}
-				if (!stream.DataAvailable) continue;
-				
-				var buffer = new byte[1024];
-				_ = stream.Read(buffer, 0, buffer.Length);
-				Console.WriteLine(Encoding.UTF8.GetString(buffer));
-				break;
+				nodeResponse.Add(JsonSerializer.Deserialize<NodeResponse>(arg));
+			}
+			foreach(var node in nodeResponse)
+			{
+				Connections.AddRange(node.Connections);
 			}
 		}
 
