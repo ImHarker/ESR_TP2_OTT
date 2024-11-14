@@ -55,7 +55,11 @@ public class PacketReader(NetworkStream stream)
     private void ReadArguments(out string[] args)
     {
         _ = OpCode;
-        if (m_ArgumentCount == -1) m_ArgumentCount = m_Stream.ReadByte();
+        if (m_ArgumentCount == -1)
+        {
+            m_ArgumentCount = m_Stream.ReadByte();
+            Console.WriteLine($"[PacketReader] Argument Count: {m_ArgumentCount}");
+        }
         if (m_Arguments.Count >= m_ArgumentCount)
         {
             args = m_Arguments.ToArray();
@@ -67,10 +71,12 @@ public class PacketReader(NetworkStream stream)
         {
             var lengthBuffer = new byte[4];
             _ = m_Stream.Read(lengthBuffer, 0, 4);
+            Console.WriteLine($"[PacketReader] Argument Length: {BitConverter.ToInt32(lengthBuffer)}");
             var length = BitConverter.ToInt32(lengthBuffer);
             var buffer = new byte[length];
             _ = m_Stream.Read(buffer, 0, buffer.Length);
             args[i] = Encoding.UTF8.GetString(buffer);
+            Console.WriteLine($"[PacketReader] Argument: {args[i]}");
         }
         
         m_Arguments = args.ToList();
@@ -79,6 +85,7 @@ public class PacketReader(NetworkStream stream)
     private void ReadOpCode(out OpCodes opCode)
     {
         m_OpCode ??= (OpCodes)m_Stream.ReadByte();
+        Console.WriteLine($"[PacketReader] OpCode: {m_OpCode:X} - {m_OpCode}");
         opCode = m_OpCode ?? throw new InvalidOperationException("[PacketReader] Invalid OpCode");
     }
 }

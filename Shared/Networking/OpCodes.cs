@@ -2,6 +2,7 @@
 {
     public enum OpCodes
     {
+        Disconnect = -1,
         None = 0x00,
         Heartbeat = 0x01,
         StartStreaming = 0x02,

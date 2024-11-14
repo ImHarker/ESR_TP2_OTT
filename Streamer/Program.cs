@@ -62,8 +62,9 @@ namespace ESR.Streamer
 
                     while (handler.Connected)
                     {
-                        var opCode = stream.ReadByte();
-                        if (opCode == -1)
+                        _ = new PacketReader(stream).GetOpCode(out var opCode).GetArguments(out _);
+                        
+                        if (opCode == OpCodes.Disconnect)
                         {
                             Console.WriteLine($"[Listener] Client {handler.Client.RemoteEndPoint} disconnected");
                             SetShouldSendVideo(false);
@@ -72,7 +73,7 @@ namespace ESR.Streamer
 
                         if ((OpCodes)opCode != OpCodes.None)
                         {
-                            Console.WriteLine($"[Listener] Received OpCode: {opCode:X} - {(OpCodes)opCode}");
+                            Console.WriteLine($"[Listener] Received OpCode: {opCode:X} - {opCode}");
                         }
 
                         switch ((OpCodes)opCode)
@@ -92,8 +93,6 @@ namespace ESR.Streamer
                                 Console.WriteLine("[Listener] Invalid OpCode Received: " + opCode);
                                 break;
                         }
-
-                        Thread.Sleep(50);
                     }
                 }
                 catch (Exception e)

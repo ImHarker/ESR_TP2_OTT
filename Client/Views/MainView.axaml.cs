@@ -3,54 +3,53 @@ using Avalonia.Media.Imaging;
 using System.IO;
 using System.Net.Sockets;
 using System;
+using System.Threading.Tasks;
 using ESR.Shared;
 
 namespace Client.Views;
 
 public partial class MainView : UserControl
 {
-    private PacketBuilder m_PacketBuilder = new();
-    
-    private const int c_Port = 5000;
-    private UdpClient m_UdpClient;
-    private TcpClient m_TcpClient;
     private bool m_IsRunning = true;
-    
+
     public MainView()
     {
         InitializeComponent();
         AskServerForVideo();
         StartUdpStream();
     }
-    
-    private async void StartUdpStream()
+
+    private void StartUdpStream()
     {
-        m_UdpClient = new UdpClient(Consts.UdpPort + 1);
-
-        try
+        Console.WriteLine("A");
+        NetworkMessenger.StartUdpClient(Consts.UdpPort + 1, async client =>
         {
-            while (m_IsRunning)
+            try
             {
-                var result = await m_UdpClient.ReceiveAsync();
-                var frameBuffer = result.Buffer;
+                while (m_IsRunning)
+                {
+                    Console.WriteLine(NetworkMessenger.TcpClients.Count);
 
-                DisplayFrame(frameBuffer);
+                    var result = await client.ReceiveAsync();
+                    var frameBuffer = result.Buffer;
+
+                    DisplayFrame(frameBuffer);
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error receiving UDP stream: {ex.Message}");
-        }
-        finally
-        {
-            Close();
-        }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error receiving UDP stream: {ex.Message}");
+            }
+            finally
+            {
+                Close();
+            }
+        });
     }
 
     private void DisplayFrame(byte[] frameBuffer)
     {
         using var stream = new MemoryStream(frameBuffer);
-
         var bitmap = new Bitmap(stream);
         StreamImage.Source = bitmap;
     }
@@ -58,19 +57,12 @@ public partial class MainView : UserControl
     public void Close()
     {
         m_IsRunning = false;
-        m_UdpClient.Close();
-        m_TcpClient.Close();
+        NetworkMessenger.DisposeUdpClient(Consts.UdpPort + 1);
+        NetworkMessenger.DisposeTcpClient("127.0.0.1");
     }
 
-    private void AskServerForVideo()
+    private static void AskServerForVideo()
     {
-        Console.WriteLine("Asking server for video...");
-        NetworkMessenger.Send("127.0.0.1", Consts.TcpPort, OpCodes.StartStreaming);
-        
-        // m_TcpClient = new TcpClient();
-        // m_TcpClient.Connect("127.0.0.1", Consts.TcpPort);
-        //
-        // var stream = m_TcpClient.GetStream();
-        // stream.WriteByte((byte)OpCodes.StartStreaming);
+        NetworkMessenger.Send("127.0.0.1", Consts.TcpPort, OpCodes.StartStreaming, false);
     }
 }
