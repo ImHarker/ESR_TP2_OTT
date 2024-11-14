@@ -37,9 +37,7 @@ jobs:
 
     - name: Temporarily remove .github/workflows directory
       run: | 
-        git reflog expire --expire=now --all
-        git gc --prune=now
-        git filter-branch --tree-filter 'rm -rf .github/workflows' HEAD 
+        git filter-branch -f --tree-filter 'rm -rf .github/workflows' HEAD
 
     - name: Add public repo as remote
       run: |
