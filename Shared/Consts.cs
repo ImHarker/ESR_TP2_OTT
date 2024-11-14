@@ -2,7 +2,8 @@ namespace ESR.Shared;
 
 public static class Consts
 {
-    public const string TrackerIpAddress = "127.0.0.1";
+    public const string TrackerIpAddress = "10.0.14.10";
+    public const string StreamerIpAddress = "10.0.13.10";
     
     public const int TcpPort = 27015; // Default port for TCP connections
     public const int UdpPort = 27020; // Default port for UDP connections
