@@ -36,14 +36,14 @@ jobs:
 
     - name: Add public repo as remote
       run: |
-        git remote add public https://github.com/ImHarker/ESR_TP2_OTT.git
+        git remote add public https://${{ secrets.ESR_DESK }}@github.com/ImHarker/ESR_OTT_TP2.git
         git fetch public
 
     - name: Push to public repository without workflows
       run: |
         git push --mirror public
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.ESR_DESK }}
 
     - name: Restore workflows directory for private repository
       if: always()
