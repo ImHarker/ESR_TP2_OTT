@@ -49,7 +49,3 @@ jobs:
       run: |
         # Push para o repositório público
         git push --mirror public
-
-    - name: Restore workflows directory for private repository
-      if: always()
-      run: git checkout HEAD .github/workflows
