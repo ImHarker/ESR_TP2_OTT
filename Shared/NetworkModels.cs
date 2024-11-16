@@ -15,7 +15,7 @@ public struct NodeNet
     public struct Node
     {
         [JsonPropertyName("ip")]
-        public string IpAddress { get; init; }
+        public string[] IpAddressAlias { get; init; }
         [JsonPropertyName("connections")]
         public string[] Connections { get; init; }
         [JsonPropertyName("isPOP")]

@@ -36,7 +36,7 @@ namespace ESR.Tracker
                 {
                     tcpClients.Add(await listener.AcceptTcpClientAsync());
 
-                    var friendly = networkGraph.Nodes.Find(node => node.Id == Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClients[^1])!));
+                    var friendly = networkGraph.Nodes.Find(node => node.HasAlias(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClients[^1])!)));
                     if (friendly == null)
                     {
                         Console.WriteLine($"[Listener] Node {tcpClients[^1].Client.RemoteEndPoint} is not a friendly node. Closing connection...");
@@ -64,9 +64,9 @@ namespace ESR.Tracker
                 while (true)
                 {
                     _ = new PacketReader(stream).GetOpCode(out var opCode).GetArguments(out _);
-                    
+
                     Console.WriteLine($"[Listener] Received OpCode: {opCode:X} - {opCode}");
-                    
+
                     if (opCode == OpCodes.Disconnect)
                     {
                         Console.WriteLine($"[Listener] Client {tcpClient.Client.RemoteEndPoint} disconnected");
@@ -80,19 +80,28 @@ namespace ESR.Tracker
                                 var found = false;
                                 foreach (var node in nodeNet.Nodes)
                                 {
+                                    var isAlias = false;
+                                    for (var i = 0; i < node.IpAddressAlias.Length; i++)
+                                    {
+                                        if (node.IpAddressAlias[i] == Utils.GetIPAddressFromTcpClient(tcpClient))
+                                        {
+                                            isAlias = true;
+                                            break;
+                                        }
+                                    }
+
+                                    if (!isAlias) continue;
+
                                     var connections = new NodeResponse
                                     {
                                         Connections = node.Connections,
                                         IsPOP = node.IsPOP
                                     };
-                                    if (node.IpAddress == Utils.GetIPAddressFromTcpClient(tcpClient))
-                                    {
-                                        Console.WriteLine($"[Listener] Node {tcpClient.Client.RemoteEndPoint} requested nodes");
-                                        var packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.GetNodes).WriteArgument(JsonSerializer.Serialize(connections));
-                                        stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
-                                        found = true;
-                                        break;
-                                    }
+                                    Console.WriteLine($"[Listener] Node {tcpClient.Client.RemoteEndPoint} requested nodes");
+                                    var packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.GetNodes).WriteArgument(JsonSerializer.Serialize(connections));
+                                    stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
+                                    found = true;
+                                    break;
                                 }
 
                                 if (!found)
@@ -100,6 +109,7 @@ namespace ESR.Tracker
                                     Console.WriteLine($"[Listener] Client {tcpClient.Client.RemoteEndPoint} requested nodes but is not in the list");
                                     await stream.WriteAsync("[]"u8.ToArray());
                                 }
+
                                 break;
                             default:
                                 Console.WriteLine($"[Listener] Unknown OpCode: {opCode}");
