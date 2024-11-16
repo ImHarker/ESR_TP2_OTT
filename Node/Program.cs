@@ -1,4 +1,5 @@
-﻿using System.Net.Sockets;
+using System.Diagnostics;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using ESR.Shared;
@@ -45,7 +46,7 @@ namespace ESR.Node
             {
                 nodeResponse.Add(JsonSerializer.Deserialize<NodeResponse>(arg));
             }
-
+            
             foreach (var node in nodeResponse)
             {
                 Connections.AddRange(node.Connections);
