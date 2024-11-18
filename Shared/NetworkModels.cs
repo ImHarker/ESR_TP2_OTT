@@ -2,12 +2,20 @@
 
 namespace ESR.Shared;
 
+public struct NodeConnection()
+{
+    [JsonPropertyName("id")]
+    public int Id { get; init; }
+    [JsonPropertyName("alias")]
+    public string[] Aliases { get; init; }
+    [JsonPropertyName("connected")]
+    public bool Connected { get; set; } = false;
+}
+
 public struct NodeResponse
 {
     [JsonPropertyName("connections")]
-    public string[] Connections { get; init; }
-    [JsonPropertyName("isPOP")]
-    public bool IsPOP { get; init; }
+    public List<NodeConnection> Connections { get; init; }
 }
 
 public struct NodeNet

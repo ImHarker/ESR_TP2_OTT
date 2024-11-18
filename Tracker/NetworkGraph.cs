@@ -6,12 +6,15 @@ public class NetworkGraph
 {
     public struct Connection
     {
-        public int Ip { get; init; }
+        public int Id { get; init; }
         public int Weight { get; set; }
     }
 
     public class Node
     {
+        private static int s_IdCounter;
+        public int Id { get; } = s_IdCounter++;
+        public bool IsConnected = false;
         public int[] Alias { get; init; } = [];
         public List<Connection> Connections { get; init; } = [];
 
@@ -36,20 +39,25 @@ public class NetworkGraph
                 Connections = []
             };
 
-            foreach (var connection in nodeNet.Nodes[i].Connections)
-            {
-                var existingNode = Nodes.Find(n => n.HasAlias(Utils.IpToInt32(connection)));
-                // TODO - Implement Weighted Connections
-                var weight = existingNode == null ? Random.Shared.Next(1, 25) : existingNode.Connections.Find(c => node.HasAlias(c.Ip)).Weight;
+            Nodes.Add(node);
+        }
 
+        for (var i = 0; i < nodeNet.Nodes.Length; i++)
+        {
+            var node = Nodes[i];
+            var connections = nodeNet.Nodes[i].Connections;
+            
+            for (var j = 0; j < connections.Length; j++)
+            {
+                var connection = connections[j];
+                var otherNode = Nodes.Find(n => n.HasAlias(Utils.IpToInt32(connection)));
+                if (otherNode == null) continue;
                 node.Connections.Add(new Connection
                 {
-                    Ip = Utils.IpToInt32(connection),
-                    Weight = weight
+                    Id = otherNode.Id,
+                    Weight = 1
                 });
             }
-
-            Nodes.Add(node);
         }
     }
 
@@ -70,7 +78,6 @@ public class NetworkGraph
             unvisited.Add(node);
 
             if (node.HasAlias(end)) endNode = node;
-
             if (node.HasAlias(start))
             {
                 distances[node] = int.MaxValue;
@@ -90,7 +97,7 @@ public class NetworkGraph
         {
             foreach (var connection in current.Connections)
             {
-                if (!TryGetNode(connection.Ip, out var otherNode)) continue;
+                if (!TryGetNode(connection.Id, out var otherNode)) continue;
                 if (!unvisited.Contains(otherNode)) continue;
 
                 var newDistance = distances[current] + connection.Weight;
@@ -129,7 +136,7 @@ public class NetworkGraph
 
             foreach (var connection in current.Connections)
             {
-                if (!TryGetNode(connection.Ip, out var otherNode)) continue;
+                if (!TryGetNode(connection.Id, out var otherNode)) continue;
                 if (distances[otherNode] != distances[current] - connection.Weight) continue;
                 shortestPath.Add(otherNode);
                 current = otherNode;
@@ -145,25 +152,13 @@ public class NetworkGraph
 
         return shortestPath;
     }
-
-    public void UpdateWeights(string parent, string child, int weight)
-    {
-        if (!TryGetNode(Utils.IpToInt32(parent), out var parentNode)) return;
-        for (var i = 0; i < parentNode.Connections.Count; i++)
-        {
-            var con = parentNode.Connections[i];
-            if (con.Ip != Utils.IpToInt32(child)) continue;
-            con.Weight = weight;
-            parentNode.Connections[i] = con;
-        }
-    }
-
+    
     private bool TryGetNode(int id, out Node result)
     {
         for (var i = 0; i < Nodes.Count; i++)
         {
             var node = Nodes[i];
-            if (node.HasAlias(id)) continue;
+            if (node.Id != id) continue;
             result = node;
             return true;
         }
@@ -171,6 +166,23 @@ public class NetworkGraph
         result = null!;
         return false;
     }
+    
+    public Node? GetAliasNode(int ip)
+    {
+        return Nodes.Find(n => n.HasAlias(ip));
+    }
+    
+    public Node? GetNode(int id)
+    {
+        return Nodes.Find(n => n.Id == id);
+    }
 
+    public void UpdateNode(int ip, bool isConnected)
+    {
+        var node = GetAliasNode(ip);
+        if (node == null) return;
+        node.IsConnected = isConnected;
+    }
+    
     public List<Node> Nodes { get; set; } = [];
 }

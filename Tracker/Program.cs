@@ -9,7 +9,7 @@ namespace ESR.Tracker
     {
         private static NodeNet nodeNet;
         private static NetworkGraph networkGraph;
-        private static List<TcpClient> tcpClients = [];
+        private static Dictionary<int, TcpClient> tcpClients = [];
 
         private static async Task Main()
         {
@@ -34,17 +34,18 @@ namespace ESR.Tracker
             {
                 try
                 {
-                    tcpClients.Add(await listener.AcceptTcpClientAsync());
+                    var tcpClient = await listener.AcceptTcpClientAsync();
 
-                    var friendly = networkGraph.Nodes.Find(node => node.HasAlias(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClients[^1])!)));
+                    var friendly = networkGraph.Nodes.Find(node => node.HasAlias(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient))));
                     if (friendly == null)
                     {
-                        Console.WriteLine($"[Listener] Node {tcpClients[^1].Client.RemoteEndPoint} is not a friendly node. Closing connection...");
-                        tcpClients[^1].Close();
+                        Console.WriteLine($"[Listener] Node {tcpClient.Client.RemoteEndPoint} is not a friendly node. Closing connection...");
+                        tcpClient.Close();
                     }
                     else
                     {
-                        _ = Task.Run(() => HandleNodeConnection(tcpClients[^1]));
+                        tcpClients.Add(friendly.Id, tcpClient);
+                        _ = Task.Run(() => HandleNodeConnection(tcpClient));
                     }
                 }
                 catch (Exception e)
@@ -70,13 +71,14 @@ namespace ESR.Tracker
                     if (opCode == OpCodes.Disconnect)
                     {
                         Console.WriteLine($"[Listener] Client {tcpClient.Client.RemoteEndPoint} disconnected");
+                        networkGraph.UpdateNode(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient)), false);
                         break;
                     }
                     else
                     {
                         switch (opCode)
                         {
-                            case OpCodes.GetNodes:
+                            case OpCodes.Bootstrap:
                                 var found = false;
                                 foreach (var node in nodeNet.Nodes)
                                 {
@@ -92,15 +94,42 @@ namespace ESR.Tracker
 
                                     if (!isAlias) continue;
 
+                                    List<NodeConnection> nodeConnections = [];
+                                    foreach (var nodeConnection in node.Connections)
+                                    {
+                                        var nodeConnectionNode = networkGraph.GetAliasNode(Utils.IpToInt32(nodeConnection));
+                                        if (nodeConnectionNode != null)
+                                        {
+                                            nodeConnections.Add(new NodeConnection()
+                                            {
+                                                Id = nodeConnectionNode.Id,
+                                                Aliases = Utils.Int32ToIp(nodeConnectionNode.Alias),
+                                                Connected = nodeConnectionNode.IsConnected
+                                            });
+                                        }
+                                    }
+                                    
                                     var connections = new NodeResponse
                                     {
-                                        Connections = node.Connections,
-                                        IsPOP = node.IsPOP
+                                        Connections = nodeConnections
                                     };
+                                    
                                     Console.WriteLine($"[Listener] Node {tcpClient.Client.RemoteEndPoint} requested nodes");
-                                    var packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.GetNodes).WriteArgument(JsonSerializer.Serialize(connections));
+                                    var packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.Bootstrap).WriteArgument(JsonSerializer.Serialize(connections));
                                     stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
                                     found = true;
+                                    
+                                    foreach(var connection in nodeConnections)
+                                    {
+                                        if (!tcpClients.TryGetValue(connection.Id, out var client)) continue;
+                                        stream = client.GetStream();
+                                        var networkGraphNode = networkGraph.GetAliasNode(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient)));
+                                        if (networkGraphNode == null) continue;
+                                        var id = networkGraphNode.Id;
+                                        packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.NodeUpdate).WriteArgument(id.ToString()).WriteArgument("1");
+                                        stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
+                                    }
+                                    
                                     break;
                                 }
 

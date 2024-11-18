@@ -5,9 +5,9 @@ namespace ESR.Shared;
 
 public static class Utils
 {
-    public static string? GetIPAddressFromTcpClient(TcpClient tcpClient)
+    public static string GetIPAddressFromTcpClient(TcpClient tcpClient)
     {
-        return (tcpClient.Client.RemoteEndPoint as IPEndPoint)?.Address.ToString().Split(":")[0];
+        return (tcpClient.Client.RemoteEndPoint as IPEndPoint)!.Address.ToString().Split(":")[0];
     }
     
     public static int IpToInt32(string ip)
@@ -22,6 +22,17 @@ public static class Utils
         for (var i = 0; i < ipAlias.Length; i++)
         {
             result[i] = IpToInt32(ipAlias[i]);
+        }
+
+        return result;
+    }
+
+    public static string[] Int32ToIp(int[] ips)
+    {
+        var result = new string[ips.Length];
+        for (var i = 0; i < ips.Length; i++)
+        {
+            result[i] = $"{(ips[i] >> 24) & 255}.{(ips[i] >> 16) & 255}.{(ips[i] >> 8) & 255}.{ips[i] & 255}";
         }
 
         return result;
