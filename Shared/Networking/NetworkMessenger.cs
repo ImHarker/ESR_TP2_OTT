@@ -4,8 +4,19 @@ namespace ESR.Shared;
 
 public class Response(PacketReader reader)
 {
-    public OpCodes OpCode { get; init; } = reader.OpCode;
-    public string[] Arguments { get; init; } = reader.Arguments;
+    public OpCodes OpCode { get; } = reader.OpCode;
+    public string[] Arguments { get; } = reader.Arguments;
+    
+    public override string ToString()
+    {
+        var str = $"OpCode: {OpCode}";
+        for (var i = 0; i < Arguments.Length; i++)
+        {
+            str += $"\nArg{i}: {Arguments[i]}";
+        }
+
+        return str;
+    }
 }
 
 public static class NetworkMessenger
@@ -14,6 +25,14 @@ public static class NetworkMessenger
     
     public static Dictionary<int, TcpClient> TcpClients { get; } = new();
     private static Dictionary<int, UdpClient> UdpClients { get; } = new();
+
+    public static Response Get(string ip, int port, bool dispose)
+    {
+        var client = EstablishTcpConnection(ip, port);
+        var response = new Response(new PacketReader(client.GetStream()));
+        if (dispose) DisposeTcpClient(ip);
+        return response;
+    }
     
     public static Response Get(string ip, int port, OpCodes opCode, bool dispose, params string[] args)
     {
@@ -74,14 +93,8 @@ public static class NetworkMessenger
 
     private static TcpClient EstablishTcpConnection(string ip, int port)
     {
-        if (TcpClients.TryGetValue(Utils.IpToInt32(ip), out var tcpClient))
-        {
-            Console.WriteLine(tcpClient);
-            return tcpClient;
-        }
+        if (TcpClients.TryGetValue(Utils.IpToInt32(ip), out var tcpClient)) return tcpClient;
 
-        Console.WriteLine("Establishing TCP connection... to " + ip);
-        
         var client = new TcpClient(ip, port);
         TcpClients[Utils.IpToInt32(ip)] = client;
         return client;
@@ -89,10 +102,7 @@ public static class NetworkMessenger
 
     public static void DisposeTcpClient(string ip)
     {
-        if (TcpClients.Remove(Utils.IpToInt32(ip), out var client))
-        {
-            client.Close();
-        }
+        if (TcpClients.Remove(Utils.IpToInt32(ip), out var client)) client.Close();
     }
     
     #endregion

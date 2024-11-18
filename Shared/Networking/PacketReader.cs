@@ -3,9 +3,9 @@ using System.Text;
 
 namespace ESR.Shared;
 
-public class PacketReader(NetworkStream stream)
+public class PacketReader
 {
-    private NetworkStream m_Stream { get; init; } = stream;
+    private Stream m_Stream { get; init; }
     
     private OpCodes? m_OpCode;
     public OpCodes OpCode
@@ -21,6 +21,17 @@ public class PacketReader(NetworkStream stream)
             return opCode;
         }
     }
+
+    public PacketReader(NetworkStream stream)
+    {
+        m_Stream = stream;
+    }
+    
+    public PacketReader(byte[] buffer)
+    {
+        m_Stream = new MemoryStream(buffer);
+    }
+    
     public PacketReader GetOpCode(out OpCodes opCode)
     {
         opCode = OpCode;
