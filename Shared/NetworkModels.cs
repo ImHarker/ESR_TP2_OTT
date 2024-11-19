@@ -2,7 +2,7 @@
 
 namespace ESR.Shared;
 
-public struct NodeConnection()
+public class NodeConnection()
 {
     [JsonPropertyName("id")]
     public int Id { get; init; }

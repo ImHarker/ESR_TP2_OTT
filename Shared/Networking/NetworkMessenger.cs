@@ -115,7 +115,7 @@ public static class NetworkMessenger
         
         var udpClient = new UdpClient(port);
         UdpClients[port] = udpClient;
-        _ = action(udpClient);
+        Task.Run(() => action(udpClient));
     }
     
     public static void DisposeUdpClient(int port)
