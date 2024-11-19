@@ -36,10 +36,12 @@ namespace ESR.Tracker
                 {
                     var tcpClient = await listener.AcceptTcpClientAsync();
 
-                    var friendly = networkGraph.Nodes.Find(node => node.HasAlias(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient))));
+                    var friendly = networkGraph.Nodes.Find(node =>
+                        node.HasAlias(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient))));
                     if (friendly == null)
                     {
-                        Console.WriteLine($"[Listener] Node {tcpClient.Client.RemoteEndPoint} is not a friendly node. Closing connection...");
+                        Console.WriteLine(
+                            $"[Listener] Node {tcpClient.Client.RemoteEndPoint} is not a friendly node. Closing connection...");
                         tcpClient.Close();
                     }
                     else
@@ -72,6 +74,7 @@ namespace ESR.Tracker
                     {
                         Console.WriteLine($"[Listener] Client {tcpClient.Client.RemoteEndPoint} disconnected");
                         networkGraph.UpdateNode(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient)), false);
+                        tcpClients.Remove(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient)));
                         break;
                     }
                     else
@@ -97,7 +100,8 @@ namespace ESR.Tracker
                                     List<NodeConnection> nodeConnections = [];
                                     foreach (var nodeConnection in node.Connections)
                                     {
-                                        var nodeConnectionNode = networkGraph.GetAliasNode(Utils.IpToInt32(nodeConnection));
+                                        var nodeConnectionNode =
+                                            networkGraph.GetAliasNode(Utils.IpToInt32(nodeConnection));
                                         if (nodeConnectionNode != null)
                                         {
                                             nodeConnections.Add(new NodeConnection()
@@ -108,34 +112,43 @@ namespace ESR.Tracker
                                             });
                                         }
                                     }
-                                    
+
                                     var connections = new NodeResponse
                                     {
                                         Connections = nodeConnections
                                     };
-                                    
-                                    Console.WriteLine($"[Listener] Node {tcpClient.Client.RemoteEndPoint} requested nodes");
-                                    var packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.Bootstrap).WriteArgument(JsonSerializer.Serialize(connections));
+
+                                    Console.WriteLine(
+                                        $"[Listener] Node {tcpClient.Client.RemoteEndPoint} requested nodes");
+                                    var packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.Bootstrap)
+                                        .WriteArgument(JsonSerializer.Serialize(connections));
                                     stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
                                     found = true;
-                                    
-                                    foreach(var connection in nodeConnections)
+
+                                    var networkGraphNode =
+                                        networkGraph.GetAliasNode(
+                                            Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient)));
+                                    if (networkGraphNode == null) continue;
+
+                                    networkGraphNode.IsConnected = true;
+
+                                    foreach (var connection in nodeConnections)
                                     {
                                         if (!tcpClients.TryGetValue(connection.Id, out var client)) continue;
                                         stream = client.GetStream();
-                                        var networkGraphNode = networkGraph.GetAliasNode(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient)));
-                                        if (networkGraphNode == null) continue;
                                         var id = networkGraphNode.Id;
-                                        packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.NodeUpdate).WriteArgument(id.ToString()).WriteArgument("1");
+                                        packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.NodeUpdate)
+                                            .WriteArgument(id.ToString()).WriteArgument("1");
                                         stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
                                     }
-                                    
+
                                     break;
                                 }
 
                                 if (!found)
                                 {
-                                    Console.WriteLine($"[Listener] Client {tcpClient.Client.RemoteEndPoint} requested nodes but is not in the list");
+                                    Console.WriteLine(
+                                        $"[Listener] Client {tcpClient.Client.RemoteEndPoint} requested nodes but is not in the list");
                                     await stream.WriteAsync("[]"u8.ToArray());
                                 }
 
