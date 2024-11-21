@@ -10,11 +10,18 @@ namespace ESR.Tracker
         private static NodeNet nodeNet;
         private static NetworkGraph networkGraph;
         private static Dictionary<int, TcpClient> tcpClients = [];
+        private static SBT sbt;
 
         private static async Task Main()
         {
             BootstrapGraph();
-            await Listen();
+            sbt = SBT.BuildSBT(networkGraph.GetNode(0), networkGraph);
+            foreach (var node in sbt.AdjacencyList.Keys)
+            {
+                Console.WriteLine($"Node {node.Id} has children: {string.Join(", ", sbt.GetChildren(node).Select(x => x.Id))}");
+            }
+            
+            //await Listen();
         }
 
         private static void BootstrapGraph()
