@@ -15,6 +15,11 @@ public static class Utils
         var split = ip.Split(".");
         return (int.Parse(split[0]) << 24) | (int.Parse(split[1]) << 16) | (int.Parse(split[2]) << 8) | int.Parse(split[3]);
     }
+
+    public static string Int32ToIp(int ip) {
+        var result = $"{(ip >> 24) & 255}.{(ip >> 16) & 255}.{(ip >> 8) & 255}.{ip & 255}";
+        return result;
+    }
     
     public static int[] IpAliasToInt32(string[] ipAlias)
     {

@@ -10,6 +10,7 @@
         Metrics = 0x04,
         MetricsAck = 0x05,
         NodeUpdate = 0x06,
+        ForwardTo = 0x07,
         Shutdown = 0xFF
     }
 }

@@ -15,6 +15,7 @@ public class NetworkGraph
         private static int s_IdCounter;
         public int Id { get; } = s_IdCounter++;
         public bool IsConnected = false;
+        public bool IsPOP = false;
         public int[] Alias { get; init; } = [];
         public List<Connection> Connections { get; init; } = [];
 
@@ -36,7 +37,8 @@ public class NetworkGraph
             var node = new Node
             {
                 Alias = Utils.IpAliasToInt32(nodeNet.Nodes[i].IpAddressAlias),
-                Connections = []
+                Connections = [],
+                IsPOP =  nodeNet.Nodes[i].IsPOP
             };
 
             Nodes.Add(node);
@@ -68,6 +70,7 @@ public class NetworkGraph
 
         var unvisited = new HashSet<Node>();
         var distances = new Dictionary<Node, int>();
+        var previousNodes = new Dictionary<Node, Node?>(); 
         var shortestPath = new List<Node>();
 
         Node? startNode = null;
@@ -78,78 +81,45 @@ public class NetworkGraph
             unvisited.Add(node);
 
             if (node.HasAlias(end)) endNode = node;
-            if (node.HasAlias(start))
-            {
-                distances[node] = int.MaxValue;
-                continue;
-            }
+            if (node.HasAlias(start)) startNode = node;
 
-            startNode = node;
-            distances[node] = 0;
+            distances[node] = int.MaxValue;
+            previousNodes[node] = null; 
         }
 
-        if (unvisited.Count == 0 || startNode == null || endNode == null) return [];
+        if (unvisited.Count == 0 || startNode == null || endNode == null) return shortestPath;
 
-        var current = startNode;
-        unvisited.Remove(current);
+        distances[startNode] = 0;
 
         while (unvisited.Count > 0)
         {
+            var current = unvisited.OrderBy(node => distances[node]).FirstOrDefault();
+            if (current == null || distances[current] == int.MaxValue) break;
+
+            unvisited.Remove(current);
+
             foreach (var connection in current.Connections)
             {
-                if (!TryGetNode(connection.Id, out var otherNode)) continue;
-                if (!unvisited.Contains(otherNode)) continue;
+                if (!TryGetNode(connection.Id, out var neighbor)) continue;
+                if (!unvisited.Contains(neighbor)) continue;
 
                 var newDistance = distances[current] + connection.Weight;
-                if (newDistance < distances[otherNode])
+                if (newDistance < distances[neighbor])
                 {
-                    distances[otherNode] = newDistance;
+                    distances[neighbor] = newDistance;
+                    previousNodes[neighbor] = current;
                 }
             }
-
-            var smallest = int.MaxValue;
-            Node? next = null;
-            foreach (var node in unvisited)
-            {
-                if (distances[node] >= smallest) continue;
-                smallest = distances[node];
-                next = node;
-            }
-
-            if (next == null) break;
-            current = next;
-            unvisited.Remove(current);
         }
-
-        current = endNode;
-        shortestPath.Add(current);
-
-        Node? lastNode = null;
-        while (!current.HasAlias(start))
+        
+        var currentPathNode = endNode;
+        while (currentPathNode != null)
         {
-            if (lastNode != null && lastNode.Alias == current.Alias)
-            {
-                throw new Exception("Couldn't find a path back");
-            }
-
-            lastNode = current;
-
-            foreach (var connection in current.Connections)
-            {
-                if (!TryGetNode(connection.Id, out var otherNode)) continue;
-                if (distances[otherNode] != distances[current] - connection.Weight) continue;
-                shortestPath.Add(otherNode);
-                current = otherNode;
-                break;
-            }
+            shortestPath.Add(currentPathNode);
+            currentPathNode = previousNodes[currentPathNode];
         }
 
-        var copy = new List<Node>(shortestPath);
-        for (var i = 0; i < shortestPath.Count; i++)
-        {
-            shortestPath[i] = copy[^(i + 1)];
-        }
-
+        shortestPath.Reverse();
         return shortestPath;
     }
     
