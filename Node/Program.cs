@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using ESR.Shared;
@@ -36,6 +37,7 @@ namespace ESR.Node
         public static Dictionary<int, List<MetricsPacket>> s_Metrics = new();
         public static Dictionary<int, List<MetricsPacketAck>> s_MetricsAck = new();
         public static Dictionary<int, List<Metrics>> s_MetricsCalc = [];
+        public static List<int> s_ForwardTo = [];
         
         private static void Main()
         {
@@ -45,6 +47,9 @@ namespace ESR.Node
             {
                 var metrics = new Thread(Metrics);
                 metrics.Start();
+                var videoStream = new Thread(VideoStream);
+                videoStream.Start();
+                
             }
             catch (Exception e)
             {
@@ -70,7 +75,15 @@ namespace ESR.Node
                 try
                 {
                     response = NetworkMessenger.Get(Consts.TrackerIpAddress, Consts.TcpPort, false);
-                    if(response.OpCode == OpCodes.ForwardTo) Console.WriteLine(string.Join(", ", response.Arguments));
+                    if (response.OpCode == OpCodes.ForwardTo) {
+                        Console.WriteLine(string.Join(", ", response.Arguments));
+                        s_ForwardTo.Clear();
+                        foreach (var idStr in response.Arguments) {
+                            var id = int.Parse(idStr);
+                            s_ForwardTo.Add(id);
+                        }
+                        
+                    }
                     if (response.OpCode != OpCodes.NodeUpdate) continue;
                     NodeConnection? nodeCon = null;
                     var i = 0;
@@ -179,6 +192,29 @@ namespace ESR.Node
                     {
                         Console.WriteLine($"[Node] Error: {e.Message}");
                     }
+                }
+            });
+        }
+
+        private static void VideoStream() {
+            NetworkMessenger.StartUdpClient(Consts.UdpPort, async client => 
+            {
+                while (true) {
+                    var result = await client.ReceiveAsync();
+                    PacketReader reader = new(result.Buffer);
+                    if (reader.GetOpCode(out _).OpCode != OpCodes.VideoStream) continue;
+                    Console.WriteLine($"Received Stream from {result.RemoteEndPoint.Address} - {reader.Arguments[0]}");
+                    string[] args = [];
+                    reader.GetArguments(out args);
+                    foreach (var dest in s_ForwardTo) {
+
+                        var ipstr = s_Connections.Find(x => x.Id == dest).Aliases[0];
+                        var ip = IPAddress.Parse(ipstr);
+                        
+                        var ipEndpoint = new IPEndPoint(ip, Consts.UdpPort);
+                        await client.SendAsync(result.Buffer, result.Buffer.Length, ipEndpoint);
+                    }
+
                 }
             });
         }

@@ -156,7 +156,20 @@ namespace ESR.Tracker
                                         packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.ForwardTo).WriteArguments(sbt.GetChildren(sbtnode).Select(x => x.Id.ToString()).ToArray());
                                         stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
                                     }
-
+                                    
+                                    Console.WriteLine(networkGraph.Nodes.Count(x=> x.IsConnected)); 
+                                    if(networkGraph.Nodes.Count(x=> x.IsConnected) < 9) continue;
+                                        NetworkMessenger.StartUdpClient(Consts.UdpPort, async client => {
+                                            packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.VideoStream).WriteArgument("TESTE");
+                                            var ipstr = Utils.Int32ToIp(networkGraph.Nodes[1].Alias[0]);
+                                            var ip = IPAddress.Parse(ipstr);
+                        
+                                            var ipEndpoint = new IPEndPoint(ip, Consts.UdpPort);
+                                            Console.WriteLine("Streaming Packet!");
+                                            while (true) {
+                                                await client.SendAsync(packetBuilder.Packet, packetBuilder.Packet.Length, ipEndpoint);
+                                            }
+                                        });
 
                                     break;
                                 }
