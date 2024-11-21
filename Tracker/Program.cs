@@ -15,13 +15,8 @@ namespace ESR.Tracker
         private static async Task Main()
         {
             BootstrapGraph();
-            sbt = SBT.BuildSBT(networkGraph.GetNode(0), networkGraph);
-            foreach (var node in sbt.AdjacencyList.Keys)
-            {
-                Console.WriteLine($"Node {node.Id} has children: {string.Join(", ", sbt.GetChildren(node).Select(x => x.Id))}");
-            }
             
-            //await Listen();
+            await Listen();
         }
 
         private static void BootstrapGraph()
@@ -29,6 +24,7 @@ namespace ESR.Tracker
             var json = File.ReadAllText("NodeNet.json");
             nodeNet = JsonSerializer.Deserialize<NodeNet>(json);
             networkGraph = new NetworkGraph(nodeNet);
+            networkGraph.UpdateNode(networkGraph.GetNode(0).Alias[0], true);
         }
 
         private static async Task Listen()
@@ -148,6 +144,19 @@ namespace ESR.Tracker
                                             .WriteArgument(id.ToString()).WriteArgument("1");
                                         stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
                                     }
+                                    
+                                    sbt = SBT.BuildSBT(networkGraph.GetNode(0), networkGraph);
+                                    foreach (var sbtnode in sbt.AdjacencyList.Keys)
+                                    {
+                                        Console.WriteLine($"Node {sbtnode.Id} has children: {string.Join(", ", sbt.GetChildren(sbtnode).Select(x => x.Id))}");
+                                        
+                                        if (!tcpClients.TryGetValue(sbtnode.Id, out var client)) continue;
+                                        Console.WriteLine($"[Tracker] Sending ForwardTo to node {sbtnode.Id}");
+                                        stream = client.GetStream();
+                                        packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.ForwardTo).WriteArguments(sbt.GetChildren(sbtnode).Select(x => x.Id.ToString()).ToArray());
+                                        stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
+                                    }
+
 
                                     break;
                                 }
