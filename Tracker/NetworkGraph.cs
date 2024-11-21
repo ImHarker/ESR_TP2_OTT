@@ -57,7 +57,7 @@ public class NetworkGraph
                 node.Connections.Add(new Connection
                 {
                     Id = otherNode.Id,
-                    Weight = ((node.Alias[0] == Utils.IpToInt32("10.0.8.2")) && (otherNode.Alias[0] == Utils.IpToInt32("10.0.1.2"))) ? 500 : 1
+                    Weight = 1//((node.Alias[0] == Utils.IpToInt32("10.0.8.2")) && (otherNode.Alias[0] == Utils.IpToInt32("10.0.1.2"))) ? 500 : 1
                 });
             }
         }

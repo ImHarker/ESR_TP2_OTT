@@ -1,9 +1,8 @@
 ﻿using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using System.IO;
-using System.Net.Sockets;
 using System;
-using System.Threading.Tasks;
+using Avalonia.Threading;
 using ESR.Shared;
 
 namespace Client.Views;
@@ -31,12 +30,14 @@ public partial class MainView : UserControl
                     var result = await client.ReceiveAsync();
                     var frameBuffer = result.Buffer;
 
-                    DisplayFrame(frameBuffer);
+                    Dispatcher.UIThread.Post(() =>  DisplayFrame(frameBuffer));
+
+                   
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error receiving UDP stream: {ex.Message}");
+                Console.WriteLine($"Error receiving UDP stream: {ex.Message}\n{ex.StackTrace}");
             }
             finally
             {
