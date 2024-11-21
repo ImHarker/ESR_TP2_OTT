@@ -70,7 +70,7 @@ namespace ESR.Node
                 try
                 {
                     response = NetworkMessenger.Get(Consts.TrackerIpAddress, Consts.TcpPort, false);
-
+                    if(response.OpCode == OpCodes.ForwardTo) Console.WriteLine(string.Join(", ", response.Arguments));
                     if (response.OpCode != OpCodes.NodeUpdate) continue;
                     NodeConnection? nodeCon = null;
                     var i = 0;

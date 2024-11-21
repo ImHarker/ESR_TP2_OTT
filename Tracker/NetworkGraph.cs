@@ -77,7 +77,8 @@ public class NetworkGraph
         Node? endNode = null;
 
         foreach (var node in Nodes)
-        {
+        { 
+            if (!node.IsConnected) continue;
             unvisited.Add(node);
 
             if (node.HasAlias(end)) endNode = node;
