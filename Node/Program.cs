@@ -1,249 +1,235 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using ESR.Shared;
 
-namespace ESR.Node
-{
-    public struct MetricsPacket()
-    {
-        public static byte s_IdCounter;
+namespace ESR.Node {
+    public struct MetricsPacket {
+        private static int s_IdCounter;
 
-        public static byte IdCounter
-        {
-            get => s_IdCounter;
-            set => s_IdCounter = value >= 100 ? (byte)0 : value;
+        public static int IdCounter => Interlocked.Increment(ref s_IdCounter);
+
+        public DateTime Sent { get; }
+        public int Id { get; }
+
+        public MetricsPacket() {
+            Sent = DateTime.Now;
+            Id = IdCounter % 100;
         }
-
-        public DateTime Sent { get; } = DateTime.Now;
-        public byte Id { get; } = IdCounter++;
-    }
-    
-    public readonly struct MetricsPacketAck(MetricsPacket packet)
-    {
-        public byte Id { get; } = packet.Id;
-        public float RTT { get; } = (float)(DateTime.Now - packet.Sent).TotalMilliseconds;
     }
 
-    public readonly struct Metrics(float averageRTT, float packetLoss)
-    {
-        public float AverageRTT { get; } = averageRTT;
-        public float PacketLoss { get; } = packetLoss;
+    public readonly struct MetricsPacketAck {
+        public int Id { get; }
+        public float RTT { get; }
+
+        public MetricsPacketAck(MetricsPacket packet) {
+            Id = packet.Id;
+            RTT = (float)(DateTime.Now - packet.Sent).TotalMilliseconds;
+        }
     }
 
-    internal static class Program
-    {
-        public static List<NodeConnection> s_Connections = [];
-        public static Dictionary<int, List<MetricsPacket>> s_Metrics = new();
-        public static Dictionary<int, List<MetricsPacketAck>> s_MetricsAck = new();
-        public static Dictionary<int, List<Metrics>> s_MetricsCalc = [];
-        public static List<int> s_ForwardTo = [];
-        
-        private static void Main()
-        {
+    public readonly struct Metrics {
+        public float AverageRTT { get; }
+        public float PacketLoss { get; }
+
+        public Metrics(float averageRTT, float packetLoss) {
+            AverageRTT = averageRTT;
+            PacketLoss = packetLoss;
+        }
+    }
+
+    internal static class Program {
+        public static List<NodeConnection> s_Connections = new();
+        public static ConcurrentDictionary<int, ConcurrentBag<MetricsPacket>> s_Metrics = new();
+        public static ConcurrentDictionary<int, ConcurrentBag<MetricsPacketAck>> s_MetricsAck = new();
+        public static ConcurrentDictionary<int, ConcurrentQueue<Metrics>> s_MetricsCalc = new();
+        public static List<int> s_ForwardTo = new();
+
+        private static void Main() {
             var bootstrap = new Thread(Bootstrap);
             bootstrap.Start();
-            try
-            {
+            try {
                 var metrics = new Thread(Metrics);
                 metrics.Start();
                 var videoStream = new Thread(VideoStream);
                 videoStream.Start();
-                
             }
-            catch (Exception e)
-            {
+            catch (Exception e) {
                 Console.WriteLine($"[Main] Error: {e.Message}");
                 Console.WriteLine($"[Main] Stack Trace: {e.StackTrace}");
             }
         }
 
-        private static void Bootstrap()
-        {
+        private static void Bootstrap() {
+            Console.WriteLine("[Bootstrap] Starting bootstrap process...");
             var response = NetworkMessenger.Get(Consts.TrackerIpAddress, Consts.TcpPort, OpCodes.Bootstrap, false);
             s_Connections = JsonSerializer.Deserialize<NodeResponse>(response.Arguments[0]).Connections;
+            Console.WriteLine($"[Bootstrap] Retrieved {s_Connections.Count} connections.");
 
-            foreach (var con in s_Connections)
-            {
-                s_Metrics.Add(con.Id, []);
-                s_MetricsAck.Add(con.Id, []);
-                s_MetricsCalc.Add(con.Id, []);
-            }
-
-            while (true)
-            {
-                try
-                {
+            while (true) {
+                try {
                     response = NetworkMessenger.Get(Consts.TrackerIpAddress, Consts.TcpPort, false);
                     if (response.OpCode == OpCodes.ForwardTo) {
-                        Console.WriteLine(string.Join(", ", response.Arguments));
+                        Console.WriteLine("[Bootstrap] ForwardTo update received.");
                         s_ForwardTo.Clear();
                         foreach (var idStr in response.Arguments) {
                             var id = int.Parse(idStr);
                             s_ForwardTo.Add(id);
                         }
-                        
-                    }
-                    if (response.OpCode != OpCodes.NodeUpdate) continue;
-                    NodeConnection? nodeCon = null;
-                    var i = 0;
-                    for (; i < s_Connections.Count; i++)
-                    {
-                        var con = s_Connections[i];
-                        if (con.Id == int.Parse(response.Arguments[0]))
-                        {
-                            nodeCon = con;
-                            break;
-                        }
                     }
 
-                    if (nodeCon == null) continue;
-                    nodeCon.Connected = Encoding.UTF8.GetBytes(response.Arguments[1])[0] != 0;
-                    s_Connections[i] = nodeCon;
+                    if (response.OpCode != OpCodes.NodeUpdate) continue;
+                    Console.WriteLine("[Bootstrap] NodeUpdate received.");
+                    var nodeId = int.Parse(response.Arguments[0]);
+                    var node = s_Connections.FirstOrDefault(c => c.Id == nodeId);
+                    if (node != null) {
+                        node.Connected = Encoding.UTF8.GetBytes(response.Arguments[1])[0] != 0;
+                        Console.WriteLine($"[Bootstrap] Node {nodeId} updated. Connected: {node.Connected}");
+                    }
                 }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"[Node] Error: {e.Message}");
+                catch (Exception e) {
+                    Console.WriteLine($"[Bootstrap] Error: {e.Message}");
                 }
             }
         }
 
-        private static void Metrics()
-        {
-            NetworkMessenger.StartUdpClient(Consts.UdpPortMetricsSender, async client =>
-            {
-                while (true)
-                {
-                    foreach (var con in s_Connections)
-                    {
-                        if (!con.Connected) continue;
-                        
-                        var start = s_Metrics[con.Id].Count == 0 ? 0 : s_Metrics[con.Id][^1].Id;
-                        
-                        s_Metrics[con.Id].Clear();
-                        s_MetricsAck[con.Id].Clear();
-                        
-                        for (var i = 0; i < 10; i++)
-                        {
-                            s_Metrics[con.Id].Add(new MetricsPacket());
+
+        private static void Metrics() {
+            NetworkMessenger.StartUdpClient(Consts.UdpPortMetricsSender, async client => {
+                while (true) {
+                    foreach (var con in s_Connections) {
+                        if (con.Id == 0 || !con.Connected) continue;
+
+                        Console.WriteLine($"[Node {con.Id}] Sending metrics packets...");
+
+                        s_Metrics[con.Id] = new ConcurrentBag<MetricsPacket>();
+                        s_MetricsAck[con.Id] = new ConcurrentBag<MetricsPacketAck>();
+
+                        for (var i = 0; i < 10; i++) {
+                            var metricsPacket = new MetricsPacket();
+                            s_Metrics[con.Id].Add(metricsPacket);
+
                             var packet = new PacketBuilder()
                                 .WriteOpCode(OpCodes.Metrics)
-                                .WriteArgument(s_Metrics[con.Id][^1].Id.ToString())
+                                .WriteArgument(metricsPacket.Id.ToString())
                                 .Packet;
-                            
-                            await client.SendAsync(packet, packet.Length, con.Aliases[0],
-                                Consts.UdpPortMetricsListener);
+
+                            await client.SendAsync(packet, packet.Length, con.Aliases[0], Consts.UdpPortMetricsListener);
                         }
 
-                        _ = Task.Run(() => CalculateMetrics(con.Id, start));
+                        _ = Task.Run(() => CalculateMetrics(con.Id, s_Metrics[con.Id]));
                     }
 
                     await Task.Delay(10000);
                 }
             });
 
-            NetworkMessenger.StartUdpClient(Consts.UdpPortMetricsListener, async client =>
-            {
-                while (true)
-                {
+            NetworkMessenger.StartUdpClient(Consts.UdpPortMetricsListener, async client => {
+                while (true) {
                     var result = await client.ReceiveAsync();
                     PacketReader reader = new(result.Buffer);
 
                     if (reader.GetOpCode(out _).OpCode != OpCodes.Metrics) continue;
+
                     reader.GetArguments(out var arguments);
-                    var packet = new PacketBuilder().WriteOpCode(OpCodes.MetricsAck).WriteArgument(arguments[0]).Packet;
-                    await client.SendAsync(packet, packet.Length, result.RemoteEndPoint.Address.ToString(),
-                        Consts.UdpPortMetricsAckListener);
+                    var packet = new PacketBuilder()
+                        .WriteOpCode(OpCodes.MetricsAck)
+                        .WriteArgument(arguments[0])
+                        .Packet;
+
+                    await client.SendAsync(packet, packet.Length, result.RemoteEndPoint.Address.ToString(), Consts.UdpPortMetricsAckListener);
                 }
             });
 
-            NetworkMessenger.StartUdpClient(Consts.UdpPortMetricsAckListener, async client =>
-            {
-                while (true)
-                {
+            NetworkMessenger.StartUdpClient(Consts.UdpPortMetricsAckListener, async client => {
+                while (true) {
                     var result = await client.ReceiveAsync();
                     PacketReader reader = new(result.Buffer);
                     var ip = result.RemoteEndPoint.Address.ToString();
 
                     if (reader.GetOpCode(out _).OpCode != OpCodes.MetricsAck) continue;
-                    reader.GetArguments(out var arguments);
 
+                    reader.GetArguments(out var arguments);
                     var id = -1;
-                    foreach (var con in s_Connections)
-                    {
-                        for (var i = 0; i < con.Aliases.Length; i++)
-                        {
-                            var alias = con.Aliases[i];
-                            if (alias == ip)
-                            {
-                                id = con.Id;
-                                break;
-                            }
+
+                    // Find the connection ID for the received IP
+                    foreach (var con in s_Connections) {
+                        if (con.Aliases.Contains(ip)) {
+                            id = con.Id;
+                            break;
                         }
                     }
 
-                    try
-                    {
-                        if (!s_Metrics.TryGetValue(id, out var metric)) continue;
-                        var packet = new MetricsPacketAck(metric.First(x => x.Id == int.Parse(arguments[0])));
-                        s_MetricsAck[id].Add(packet);
+                    if (id == 0) continue;
+
+                    try {
+                        if (!s_Metrics.TryGetValue(id, out var sentMetrics)) continue;
+
+                        var ackPacket = sentMetrics.FirstOrDefault(m => m.Id == int.Parse(arguments[0]));
+                        if (!ackPacket.Equals(default(MetricsPacket))) {
+                            var packetAck = new MetricsPacketAck(ackPacket);
+                            s_MetricsAck[id].Add(packetAck);
+                        }
                     }
-                    catch (Exception e)
-                    {
-                        Console.WriteLine($"[Node] Error: {e.Message}");
+                    catch (Exception e) {
+                        Console.WriteLine($"[Node {id}] Error processing ack: {e.Message}");
                     }
                 }
             });
         }
 
+        private static async Task CalculateMetrics(int nodeId, ConcurrentBag<MetricsPacket> sentMetrics) {
+            await Task.Delay(5000);
+
+            var received = 0;
+            var totalRtt = 0f;
+
+            foreach (var packet in sentMetrics) {
+                var ack = s_MetricsAck[nodeId].FirstOrDefault(a => a.Id == packet.Id);
+                if (!ack.Equals(default(MetricsPacketAck))) {
+                    received++;
+                    totalRtt += ack.RTT;
+                }
+            }
+
+            var lossRate = 1 - (received / (float)sentMetrics.Count);
+            var avgRtt = received > 0 ? totalRtt / received : 0;
+
+            Console.WriteLine($"[Node {nodeId}] Metrics - Packet Loss: {lossRate:P}, Avg RTT: {avgRtt}ms");
+
+            var metrics = new Metrics(avgRtt, lossRate);
+            s_MetricsCalc[nodeId].Enqueue(metrics);
+
+            while (s_MetricsCalc[nodeId].Count > 20) {
+                s_MetricsCalc[nodeId].TryDequeue(out _);
+            }
+        }
+
+
         private static void VideoStream() {
-            NetworkMessenger.StartUdpClient(Consts.UdpPort, async client => 
-            {
+            Console.WriteLine("[VideoStream] Starting video stream forwarding...");
+            NetworkMessenger.StartUdpClient(Consts.UdpPort, async client => {
                 while (true) {
                     var result = await client.ReceiveAsync();
                     PacketReader reader = new(result.Buffer);
                     if (reader.GetOpCode(out _).OpCode != OpCodes.VideoStream) continue;
-                    Console.WriteLine($"Received Stream from {result.RemoteEndPoint.Address} - {reader.Arguments[0]}");
-                    string[] args = [];
-                    reader.GetArguments(out args);
-                    foreach (var dest in s_ForwardTo) {
 
-                        var ipstr = s_Connections.Find(x => x.Id == dest).Aliases[0];
+                    Console.WriteLine($"[VideoStream] Received stream from {result.RemoteEndPoint.Address}.");
+
+                    reader.GetArguments(out var args);
+                    foreach (var dest in s_ForwardTo) {
+                        var ipstr = s_Connections.Find(x => x.Id == dest)?.Aliases[0];
+                        if (string.IsNullOrEmpty(ipstr)) continue;
+
                         var ip = IPAddress.Parse(ipstr);
-                        
                         var ipEndpoint = new IPEndPoint(ip, Consts.UdpPort);
                         await client.SendAsync(result.Buffer, result.Buffer.Length, ipEndpoint);
-                    }
 
+                        Console.WriteLine($"[VideoStream] Forwarded stream to {ip}.");
+                    }
                 }
             });
-        }
-
-        private static async Task CalculateMetrics(int nodeId, int startId)
-        {
-            await Task.Delay(5000);
-            
-            var endId = startId + 10;
-            
-            var received = 0;
-            var avgRtt = 0f;
-            for (var i = startId; i < endId; i++)
-            {
-                var id = i >= 100 ? i - 100 : i;
-                
-                if (s_MetricsAck.ContainsKey(nodeId) && s_MetricsAck[nodeId].Any(x => x.Id == id))
-                {
-                    received++;
-                    avgRtt += s_MetricsAck[nodeId].First(x => x.Id == id).RTT;
-                    
-                    Console.WriteLine($"[Node] Received packet {id} from {nodeId} with RTT of {s_MetricsAck[nodeId].First(x => x.Id == id).RTT}ms");
-                }
-            }
-            
-            if (received == 0) return;
-            Console.WriteLine($"[Node] Received {received / 10f * 100}% packets from {nodeId} with an average RTT of {avgRtt / received}ms");
-            s_MetricsCalc[nodeId].Add(new Metrics(avgRtt / received, 1 - received / 10f));
-            if (s_MetricsCalc[nodeId].Count > 20) s_MetricsCalc[nodeId].RemoveAt(0);
         }
     }
 }
