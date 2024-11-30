@@ -107,7 +107,7 @@ namespace ESR.Node {
                             await client.SendAsync(packet, packet.Length, con.Aliases[0], Consts.UdpPortMetricsListener);
                         }
 
-                        _ = Task.Run(() => CalculateMetrics(con.Id));
+                        _ = Task.Run(() => CalculateMetrics(con));
                     }
 
                     await Task.Delay(10000);
@@ -167,26 +167,26 @@ namespace ESR.Node {
             });
         }
 
-        private static async Task CalculateMetrics(int nodeId) {
+        private static async Task CalculateMetrics(NodeConnection node) {
             await Task.Delay(5000);
 
             var received = 0;
             var totalRtt = 0f;
 
-            foreach (var packet in s_Metrics[nodeId]) {
-                var ack = s_MetricsAck[nodeId].FirstOrDefault(a => a.Id == packet.Id);
+            foreach (var packet in s_Metrics[node.Id]) {
+                var ack = s_MetricsAck[node.Id].FirstOrDefault(a => a.Id == packet.Id);
                 if (!ack.Equals(default(MetricsPacketAck))) {
                     received++;
                     totalRtt += ack.RTT;
                 }
             }
 
-            var lossRate = 1 - (received / (float) s_Metrics[nodeId].Count);
+            var lossRate = 1 - (received / (float) s_Metrics[node.Id].Count);
             var avgRtt = received > 0 ? totalRtt / received : 0;
 
-            Console.WriteLine($"[Node {nodeId}] Metrics - Packet Loss: {lossRate:P}, Avg RTT: {avgRtt}ms");
+            Console.WriteLine($"[Node {node.Id}] Metrics - Packet Loss: {lossRate:P}, Avg RTT: {avgRtt}ms");
 
-            var metrics = new Metrics(avgRtt, lossRate);
+            var metrics = new Metrics(node, avgRtt, lossRate);
             
             await NetworkMessenger.SendAsync(Consts.TrackerIpAddress, Consts.TcpPort, OpCodes.Metrics, false, JsonSerializer.Serialize(metrics));
             Console.WriteLine("[Metrics] Sending metrics to tracker...");

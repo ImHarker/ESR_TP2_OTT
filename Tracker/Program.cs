@@ -12,7 +12,7 @@ namespace ESR.Tracker
         private static NetworkGraph networkGraph;
         private static ConcurrentDictionary<int, TcpClient> tcpClients = [];
         private static SBT sbt;
-        private static ConcurrentDictionary<NodeNet.Node, ConcurrentQueue<Metrics>> s_MetricsCalc = new();
+        private static ConcurrentDictionary<(NetworkGraph.Node, NetworkGraph.Node), ConcurrentQueue<Metrics>> s_MetricsCalc = new();
 
         private static async Task Main()
         {
@@ -233,14 +233,18 @@ namespace ESR.Tracker
                 Console.WriteLine($"[Metrics] Received Metrics from Node {nodeId}");
                                     
                 var metrics = JsonSerializer.Deserialize<Metrics>(args[0]);
-                if (!s_MetricsCalc.ContainsKey(node)) s_MetricsCalc[node] = new ConcurrentQueue<Metrics>();
-                s_MetricsCalc[node].Enqueue(metrics);
+                
+                // Create tuple with the nodes involved in the connection and first node is the lower id (ESR node)
+                var tuple = (networkGraph.GetNode(Math.Min(nodeId, metrics!.Connection.Id))!, networkGraph.GetNode(Math.Max(nodeId, metrics.Connection.Id))!);
+                
+                if (!s_MetricsCalc.ContainsKey(tuple)) s_MetricsCalc[tuple] = new ConcurrentQueue<Metrics>();
+                s_MetricsCalc[tuple].Enqueue(metrics);
 
-                while (s_MetricsCalc[node].Count > 20) {
-                    s_MetricsCalc[node].TryDequeue(out _);
+                while (s_MetricsCalc[tuple].Count > 20) {
+                    s_MetricsCalc[tuple].TryDequeue(out _);
                 }
-                Console.WriteLine($"[Metrics] Node {nodeId}");
-                foreach (var metric in s_MetricsCalc[node]) {
+                Console.WriteLine($"[Metrics] Node {tuple.Item1.Id} <-> Node {tuple.Item2.Id}");
+                foreach (var metric in s_MetricsCalc[tuple]) {
                     Console.WriteLine($"\tPacket Loss: {metric.PacketLoss:P}, Avg RTT: {metric.AverageRTT}ms");
                 }
             }
