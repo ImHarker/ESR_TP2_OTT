@@ -33,7 +33,7 @@ namespace ESR.Node {
         public static List<NodeConnection> s_Connections = new();
         public static ConcurrentDictionary<int, ConcurrentBag<MetricsPacket>> s_Metrics = new();
         public static ConcurrentDictionary<int, ConcurrentBag<MetricsPacketAck>> s_MetricsAck = new();
-        public static List<int> s_ForwardTo = new();
+        public static ConcurrentBag<int> s_ForwardTo = new();
 
         private static void Main() {
             var bootstrap = new Thread(Bootstrap);

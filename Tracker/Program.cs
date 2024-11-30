@@ -12,7 +12,7 @@ namespace ESR.Tracker
         private static NetworkGraph networkGraph;
         private static ConcurrentDictionary<int, TcpClient> tcpClients = [];
         private static SBT sbt;
-        private static ConcurrentDictionary<(NetworkGraph.Node, NetworkGraph.Node), ConcurrentQueue<Metrics>> s_MetricsCalc = new();
+        private static ConcurrentDictionary<(NetworkGraph.Node, NetworkGraph.Node), RttMonitor> rttMonitors = new();
 
         private static async Task Main()
         {
@@ -20,7 +20,44 @@ namespace ESR.Tracker
             
             await Listen();
         }
+        
+        private static void OnNetworkStateChanged()
+        {
+            Console.WriteLine("\n\nNetwork state change detected. Recalculating SBT...\n\n");
+            UpdateConnectionWeights();
+            var oldSbt = sbt;
+            sbt = SBT.BuildSBT(networkGraph.GetNode(0), networkGraph);
+            Console.WriteLine("SBT recalculated due to network state change.");
 
+            var oldNodes = oldSbt?.AdjacencyList.Keys.ToHashSet() ?? new HashSet<NetworkGraph.Node>();
+            var newNodes = sbt.AdjacencyList.Keys.ToHashSet();
+
+            // Notify old nodes that they no longer need to forward
+            foreach (var oldNode in oldNodes.Except(newNodes))
+            {
+                if (!tcpClients.TryGetValue(oldNode.Id, out var client)) continue;
+                Console.WriteLine($"[Tracker] Sending empty ForwardTo to old node {oldNode.Id}");
+                var stream = client.GetStream();
+                var packetBuilder = new PacketBuilder()
+                    .WriteOpCode(OpCodes.ForwardTo)
+                    .WriteArguments(Array.Empty<string>());
+                stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
+            }
+
+            // Notify new nodes of their forwarding targets
+            foreach (var sbtnode in sbt.AdjacencyList.Keys)
+            {
+                Console.WriteLine($"Node {sbtnode.Id} has children: {string.Join(", ", sbt.GetChildren(sbtnode).Select(x => x.Id))}");
+
+                if (!tcpClients.TryGetValue(sbtnode.Id, out var client)) continue;
+                Console.WriteLine($"[Tracker] Sending ForwardTo to node {sbtnode.Id}");
+                var stream = client.GetStream();
+                var packetBuilder = new PacketBuilder()
+                    .WriteOpCode(OpCodes.ForwardTo)
+                    .WriteArguments(sbt.GetChildren(sbtnode).Select(x => x.Id.ToString()).ToArray());
+                stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
+            }
+        }
         private static void BootstrapGraph()
         {
             var json = File.ReadAllText("NodeNet.json");
@@ -194,7 +231,8 @@ namespace ESR.Tracker
                 Console.WriteLine(networkGraph.Nodes.Count(x=> x.IsConnected)); 
                 if(networkGraph.Nodes.Count(x=> x.IsConnected) < 9) continue;
                 NetworkMessenger.StartUdpClient(Consts.UdpPort, async client => {
-                    packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.VideoStream).WriteArgument("TESTE");
+                    string largePayload = new string('A', 10000);
+                    packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.VideoStream).WriteArgument(largePayload);
                     var ipstr = Utils.Int32ToIp(networkGraph.Nodes[1].Alias[0]);
                     var ip = IPAddress.Parse(ipstr);
                         
@@ -202,6 +240,7 @@ namespace ESR.Tracker
                     Console.WriteLine("Streaming Packet!");
                     while (true) {
                         await client.SendAsync(packetBuilder.Packet, packetBuilder.Packet.Length, ipEndpoint);
+                        Thread.Sleep(250);
                     }
                 });
 
@@ -219,36 +258,46 @@ namespace ESR.Tracker
         private static void HandleMetrics(TcpClient tcpClient, string[] args)
         {
             var nodeId = -1;
-            foreach (var node in nodeNet.Nodes) {
+            foreach (var node in nodeNet.Nodes)
+            {
                 nodeId++;
-                var isAlias = false;
-                for (var i = 0; i < node.IpAddressAlias.Length; i++) {
-                    if (node.IpAddressAlias[i] == Utils.GetIPAddressFromTcpClient(tcpClient)) {
-                        isAlias = true;
-                        break;
-                    }
-                }
+                var isAlias = node.IpAddressAlias.Contains(Utils.GetIPAddressFromTcpClient(tcpClient));
                 if (!isAlias) continue;
-                                    
-                Console.WriteLine($"[Metrics] Received Metrics from Node {nodeId}");
-                                    
-                var metrics = JsonSerializer.Deserialize<Metrics>(args[0]);
-                
-                // Create tuple with the nodes involved in the connection and first node is the lower id (ESR node)
-                var tuple = (networkGraph.GetNode(Math.Min(nodeId, metrics!.Connection.Id))!, networkGraph.GetNode(Math.Max(nodeId, metrics.Connection.Id))!);
-                
-                if (!s_MetricsCalc.ContainsKey(tuple)) s_MetricsCalc[tuple] = new ConcurrentQueue<Metrics>();
-                s_MetricsCalc[tuple].Enqueue(metrics);
 
-                while (s_MetricsCalc[tuple].Count > 20) {
-                    s_MetricsCalc[tuple].TryDequeue(out _);
+                Console.WriteLine($"[Metrics] Received Metrics from Node {nodeId}");
+
+                var metrics = JsonSerializer.Deserialize<Metrics>(args[0]);
+
+                var tuple = (networkGraph.GetNode(Math.Min(nodeId, metrics!.Connection.Id))!, networkGraph.GetNode(Math.Max(nodeId, metrics.Connection.Id))!);
+
+                if (!rttMonitors.ContainsKey(tuple))
+                {
+                    rttMonitors[tuple] = new RttMonitor();
+                    rttMonitors[tuple].NetworkStateChanged += OnNetworkStateChanged;
                 }
-                Console.WriteLine($"[Metrics] Node {tuple.Item1.Id} <-> Node {tuple.Item2.Id}");
-                foreach (var metric in s_MetricsCalc[tuple]) {
-                    Console.WriteLine($"\tPacket Loss: {metric.PacketLoss:P}, Avg RTT: {metric.AverageRTT}ms");
+                var rttMonitor = rttMonitors[tuple];
+
+                var stateChangedRtt = rttMonitor.UpdateRtt(metrics.AverageRTT);
+                var stateChangedPacketLoss = rttMonitor.UpdatePacketLoss(metrics.PacketLoss);
+
+                if (stateChangedRtt || stateChangedPacketLoss)
+                {
+                    Console.WriteLine($"[Metrics] Network state change detected between Node {tuple.Item1.Id} and Node {tuple.Item2.Id}");
                 }
             }
-            
+        }
+        
+        private static void UpdateConnectionWeights()
+        {
+            foreach (var kvp in rttMonitors)
+            {
+                var (node1, node2) = kvp.Key;
+                var rttMonitor = kvp.Value;
+
+                var weight = rttMonitor.RttAverage + rttMonitor.PacketLossAverage * 1500;
+
+                networkGraph.UpdateConnectionWeight(node1, node2, (int)weight);
+            }
         }
         
     }
