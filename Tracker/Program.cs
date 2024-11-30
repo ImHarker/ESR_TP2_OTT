@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
 using ESR.Shared;
@@ -9,8 +10,9 @@ namespace ESR.Tracker
     {
         private static NodeNet nodeNet;
         private static NetworkGraph networkGraph;
-        private static Dictionary<int, TcpClient> tcpClients = [];
+        private static ConcurrentDictionary<int, TcpClient> tcpClients = [];
         private static SBT sbt;
+        private static ConcurrentDictionary<NodeNet.Node, ConcurrentQueue<Metrics>> s_MetricsCalc = new();
 
         private static async Task Main()
         {
@@ -49,8 +51,15 @@ namespace ESR.Tracker
                     }
                     else
                     {
-                        tcpClients.Add(friendly.Id, tcpClient);
-                        _ = Task.Run(() => HandleNodeConnection(tcpClient));
+                        if (!tcpClients.TryAdd(friendly.Id, tcpClient))
+                        {
+                            Console.WriteLine($"[Listener] Failed to add TcpClient for node {friendly.Id}");
+                            tcpClient.Close();
+                        }
+                        else
+                        {
+                            _ = Task.Run(() => HandleNodeConnection(tcpClient));
+                        }
                     }
                 }
                 catch (Exception e)
@@ -62,22 +71,22 @@ namespace ESR.Tracker
 
         private static async Task HandleNodeConnection(TcpClient tcpClient)
         {
-            Console.Write("[Listener] Handling Node Connection");
-            try
-            {
+            Console.WriteLine("[Listener] Handling Node Connection");
+            try {
                 var stream = tcpClient.GetStream();
 
                 while (true)
                 {
-                    _ = new PacketReader(stream).GetOpCode(out var opCode).GetArguments(out _);
-
-                    Console.WriteLine($"[Listener] Received OpCode: {opCode:X} - {opCode}");
+                    _ = new PacketReader(stream).GetOpCode(out var opCode).GetArguments(out var args);
+                    
+                    Console.WriteLine($"[Listener] Received OpCode: {opCode:X} - {opCode} - {string.Join(", ", args)}");
 
                     if (opCode == OpCodes.Disconnect)
                     {
                         Console.WriteLine($"[Listener] Client {tcpClient.Client.RemoteEndPoint} disconnected");
                         networkGraph.UpdateNode(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient)), false);
-                        tcpClients.Remove(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient)));
+                        var ipAddressInt = Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient));
+                        tcpClients.TryRemove(ipAddressInt, out _);
                         break;
                     }
                     else
@@ -85,7 +94,32 @@ namespace ESR.Tracker
                         switch (opCode)
                         {
                             case OpCodes.Bootstrap:
-                                var found = false;
+                                await HandleBootstrap(tcpClient, stream, args);
+                                break;
+                            
+                            case OpCodes.Metrics:
+                                HandleMetrics(tcpClient, args);
+                                break;
+                            default:
+                                Console.WriteLine($"[Listener] Unknown OpCode: {opCode} from {tcpClient.Client.RemoteEndPoint}");
+                                break;
+                        }
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"[Listener] Error: {e.Message}");
+            }
+            finally
+            {
+                tcpClient.Close();
+            }
+        }
+        
+        private static async Task HandleBootstrap(TcpClient tcpClient, NetworkStream stream, string[] args)
+        {
+            var found = false;
                                 foreach (var node in nodeNet.Nodes)
                                 {
                                     var isAlias = false;
@@ -180,23 +214,38 @@ namespace ESR.Tracker
                                         $"[Listener] Client {tcpClient.Client.RemoteEndPoint} requested nodes but is not in the list");
                                     await stream.WriteAsync("[]"u8.ToArray());
                                 }
-
-                                break;
-                            default:
-                                Console.WriteLine($"[Listener] Unknown OpCode: {opCode}");
-                                break;
-                        }
+        }
+        
+        private static void HandleMetrics(TcpClient tcpClient, string[] args)
+        {
+            var nodeId = -1;
+            foreach (var node in nodeNet.Nodes) {
+                nodeId++;
+                var isAlias = false;
+                for (var i = 0; i < node.IpAddressAlias.Length; i++) {
+                    if (node.IpAddressAlias[i] == Utils.GetIPAddressFromTcpClient(tcpClient)) {
+                        isAlias = true;
+                        break;
                     }
                 }
+                if (!isAlias) continue;
+                                    
+                Console.WriteLine($"[Metrics] Received Metrics from Node {nodeId}");
+                                    
+                var metrics = JsonSerializer.Deserialize<Metrics>(args[0]);
+                if (!s_MetricsCalc.ContainsKey(node)) s_MetricsCalc[node] = new ConcurrentQueue<Metrics>();
+                s_MetricsCalc[node].Enqueue(metrics);
+
+                while (s_MetricsCalc[node].Count > 20) {
+                    s_MetricsCalc[node].TryDequeue(out _);
+                }
+                Console.WriteLine($"[Metrics] Node {nodeId}");
+                foreach (var metric in s_MetricsCalc[node]) {
+                    Console.WriteLine($"\tPacket Loss: {metric.PacketLoss:P}, Avg RTT: {metric.AverageRTT}ms");
+                }
             }
-            catch (Exception e)
-            {
-                Console.WriteLine($"[Listener] Error: {e.Message}");
-            }
-            finally
-            {
-                tcpClient.Close();
-            }
+            
         }
+        
     }
 }
