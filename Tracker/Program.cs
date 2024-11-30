@@ -120,100 +120,100 @@ namespace ESR.Tracker
         private static async Task HandleBootstrap(TcpClient tcpClient, NetworkStream stream, string[] args)
         {
             var found = false;
-                                foreach (var node in nodeNet.Nodes)
-                                {
-                                    var isAlias = false;
-                                    for (var i = 0; i < node.IpAddressAlias.Length; i++)
-                                    {
-                                        if (node.IpAddressAlias[i] == Utils.GetIPAddressFromTcpClient(tcpClient))
-                                        {
-                                            isAlias = true;
-                                            break;
-                                        }
-                                    }
+            foreach (var node in nodeNet.Nodes)
+            {
+                var isAlias = false;
+                for (var i = 0; i < node.IpAddressAlias.Length; i++)
+                {
+                    if (node.IpAddressAlias[i] == Utils.GetIPAddressFromTcpClient(tcpClient))
+                    {
+                        isAlias = true;
+                        break;
+                    }
+                }
 
-                                    if (!isAlias) continue;
+                if (!isAlias) continue;
 
-                                    List<NodeConnection> nodeConnections = [];
-                                    foreach (var nodeConnection in node.Connections)
-                                    {
-                                        var nodeConnectionNode =
-                                            networkGraph.GetAliasNode(Utils.IpToInt32(nodeConnection));
-                                        if (nodeConnectionNode != null)
-                                        {
-                                            nodeConnections.Add(new NodeConnection()
-                                            {
-                                                Id = nodeConnectionNode.Id,
-                                                Aliases = Utils.Int32ToIp(nodeConnectionNode.Alias),
-                                                Connected = nodeConnectionNode.IsConnected
-                                            });
-                                        }
-                                    }
+                List<NodeConnection> nodeConnections = [];
+                foreach (var nodeConnection in node.Connections)
+                {
+                    var nodeConnectionNode =
+                        networkGraph.GetAliasNode(Utils.IpToInt32(nodeConnection));
+                    if (nodeConnectionNode != null)
+                    {
+                        nodeConnections.Add(new NodeConnection()
+                        {
+                            Id = nodeConnectionNode.Id,
+                            Aliases = Utils.Int32ToIp(nodeConnectionNode.Alias),
+                            Connected = nodeConnectionNode.IsConnected
+                        });
+                    }
+                }
 
-                                    var connections = new NodeResponse
-                                    {
-                                        Connections = nodeConnections
-                                    };
+                var connections = new NodeResponse
+                {
+                    Connections = nodeConnections
+                };
 
-                                    Console.WriteLine(
-                                        $"[Listener] Node {tcpClient.Client.RemoteEndPoint} requested nodes");
-                                    var packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.Bootstrap)
-                                        .WriteArgument(JsonSerializer.Serialize(connections));
-                                    stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
-                                    found = true;
+                Console.WriteLine(
+                    $"[Listener] Node {tcpClient.Client.RemoteEndPoint} requested nodes");
+                var packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.Bootstrap)
+                    .WriteArgument(JsonSerializer.Serialize(connections));
+                stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
+                found = true;
 
-                                    var networkGraphNode =
-                                        networkGraph.GetAliasNode(
-                                            Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient)));
-                                    if (networkGraphNode == null) continue;
+                var networkGraphNode =
+                    networkGraph.GetAliasNode(
+                        Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient)));
+                if (networkGraphNode == null) continue;
 
-                                    networkGraphNode.IsConnected = true;
+                networkGraphNode.IsConnected = true;
 
-                                    foreach (var connection in nodeConnections)
-                                    {
-                                        if (!tcpClients.TryGetValue(connection.Id, out var client)) continue;
-                                        stream = client.GetStream();
-                                        var id = networkGraphNode.Id;
-                                        packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.NodeUpdate)
-                                            .WriteArgument(id.ToString()).WriteArgument("1");
-                                        stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
-                                    }
+                foreach (var connection in nodeConnections)
+                {
+                    if (!tcpClients.TryGetValue(connection.Id, out var client)) continue;
+                    stream = client.GetStream();
+                    var id = networkGraphNode.Id;
+                    packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.NodeUpdate)
+                        .WriteArgument(id.ToString()).WriteArgument("1");
+                    stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
+                }
                                     
-                                    sbt = SBT.BuildSBT(networkGraph.GetNode(0), networkGraph);
-                                    foreach (var sbtnode in sbt.AdjacencyList.Keys)
-                                    {
-                                        Console.WriteLine($"Node {sbtnode.Id} has children: {string.Join(", ", sbt.GetChildren(sbtnode).Select(x => x.Id))}");
+                sbt = SBT.BuildSBT(networkGraph.GetNode(0), networkGraph);
+                foreach (var sbtnode in sbt.AdjacencyList.Keys)
+                {
+                    Console.WriteLine($"Node {sbtnode.Id} has children: {string.Join(", ", sbt.GetChildren(sbtnode).Select(x => x.Id))}");
                                         
-                                        if (!tcpClients.TryGetValue(sbtnode.Id, out var client)) continue;
-                                        Console.WriteLine($"[Tracker] Sending ForwardTo to node {sbtnode.Id}");
-                                        stream = client.GetStream();
-                                        packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.ForwardTo).WriteArguments(sbt.GetChildren(sbtnode).Select(x => x.Id.ToString()).ToArray());
-                                        stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
-                                    }
+                    if (!tcpClients.TryGetValue(sbtnode.Id, out var client)) continue;
+                    Console.WriteLine($"[Tracker] Sending ForwardTo to node {sbtnode.Id}");
+                    stream = client.GetStream();
+                    packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.ForwardTo).WriteArguments(sbt.GetChildren(sbtnode).Select(x => x.Id.ToString()).ToArray());
+                    stream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
+                }
                                     
-                                    Console.WriteLine(networkGraph.Nodes.Count(x=> x.IsConnected)); 
-                                    if(networkGraph.Nodes.Count(x=> x.IsConnected) < 9) continue;
-                                        NetworkMessenger.StartUdpClient(Consts.UdpPort, async client => {
-                                            packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.VideoStream).WriteArgument("TESTE");
-                                            var ipstr = Utils.Int32ToIp(networkGraph.Nodes[1].Alias[0]);
-                                            var ip = IPAddress.Parse(ipstr);
+                Console.WriteLine(networkGraph.Nodes.Count(x=> x.IsConnected)); 
+                if(networkGraph.Nodes.Count(x=> x.IsConnected) < 9) continue;
+                NetworkMessenger.StartUdpClient(Consts.UdpPort, async client => {
+                    packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.VideoStream).WriteArgument("TESTE");
+                    var ipstr = Utils.Int32ToIp(networkGraph.Nodes[1].Alias[0]);
+                    var ip = IPAddress.Parse(ipstr);
                         
-                                            var ipEndpoint = new IPEndPoint(ip, Consts.UdpPort);
-                                            Console.WriteLine("Streaming Packet!");
-                                            while (true) {
-                                                await client.SendAsync(packetBuilder.Packet, packetBuilder.Packet.Length, ipEndpoint);
-                                            }
-                                        });
+                    var ipEndpoint = new IPEndPoint(ip, Consts.UdpPort);
+                    Console.WriteLine("Streaming Packet!");
+                    while (true) {
+                        await client.SendAsync(packetBuilder.Packet, packetBuilder.Packet.Length, ipEndpoint);
+                    }
+                });
 
-                                    break;
-                                }
+                break;
+            }
 
-                                if (!found)
-                                {
-                                    Console.WriteLine(
-                                        $"[Listener] Client {tcpClient.Client.RemoteEndPoint} requested nodes but is not in the list");
-                                    await stream.WriteAsync("[]"u8.ToArray());
-                                }
+            if (!found)
+            {
+                Console.WriteLine(
+                    $"[Listener] Client {tcpClient.Client.RemoteEndPoint} requested nodes but is not in the list");
+                await stream.WriteAsync("[]"u8.ToArray());
+            }
         }
         
         private static void HandleMetrics(TcpClient tcpClient, string[] args)
