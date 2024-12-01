@@ -14,6 +14,7 @@ public static class Consts
     public const int Timeout = 1000; // Timeout for the connection
     public const int ErrorTimeout = 3000; // Sleep for Xms before retrying
     public const string MjpegFilePath = "stream.jpeg";
+    public const string StreamingDirectory = "Content";
     
     public const int FrameRate = 30; // Frames per second for the video
 }

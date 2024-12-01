@@ -12,6 +12,7 @@
         NodeUpdate = 0x06,
         ForwardTo = 0x07,
         VideoStream = 0x08,
-        Shutdown = 0xFF
+        ContentMetadata = 0x09,
+        Shutdown = 0xFF,
     }
 }

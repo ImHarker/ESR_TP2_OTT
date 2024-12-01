@@ -28,12 +28,12 @@ namespace ESR.Node {
             RTT = (float)(DateTime.Now - packet.Sent).TotalMilliseconds;
         }
     }
-    
+
     internal static class Program {
         public static List<NodeConnection> s_Connections = new();
         public static ConcurrentDictionary<int, ConcurrentBag<MetricsPacket>> s_Metrics = new();
         public static ConcurrentDictionary<int, ConcurrentBag<MetricsPacketAck>> s_MetricsAck = new();
-        public static ConcurrentBag<int> s_ForwardTo = new();
+        public static ConcurrentDictionary<string, List<int>> s_ForwardTo = new();
 
         private static void Main() {
             var bootstrap = new Thread(Bootstrap);
@@ -61,10 +61,14 @@ namespace ESR.Node {
                     response = NetworkMessenger.Get(Consts.TrackerIpAddress, Consts.TcpPort, false);
                     if (response.OpCode == OpCodes.ForwardTo) {
                         Console.WriteLine("[Bootstrap] ForwardTo update received.");
-                        s_ForwardTo.Clear();
-                        foreach (var idStr in response.Arguments) {
-                            var id = int.Parse(idStr);
-                            s_ForwardTo.Add(id);
+                        Console.WriteLine(
+                            $"[Bootstrap] ForwardTo update received. Content ID: {response.Arguments[0]}, Forwarding to: {string.Join(", ", response.Arguments.Skip(1))}");
+                        var contentId = response.Arguments[0];
+                        if (!s_ForwardTo.ContainsKey(contentId)) s_ForwardTo[contentId] = new();
+                        s_ForwardTo[contentId].Clear();
+                        for (int i = 1; i < response.Arguments.Length; i++) {
+                            var id = int.Parse(response.Arguments[i]);
+                            s_ForwardTo[contentId].Add(id);
                         }
                     }
 
@@ -88,7 +92,7 @@ namespace ESR.Node {
             NetworkMessenger.StartUdpClient(Consts.UdpPortMetricsSender, async client => {
                 while (true) {
                     foreach (var con in s_Connections) {
-                        if (con.Id == 0 || !con.Connected) continue;
+                        if (con.Id == 0 || con.Id == -1 || !con.Connected) continue;
 
                         Console.WriteLine($"[Node {con.Id}] Sending metrics packets...");
 
@@ -104,7 +108,8 @@ namespace ESR.Node {
                                 .WriteArgument(metricsPacket.Id.ToString())
                                 .Packet;
 
-                            await client.SendAsync(packet, packet.Length, con.Aliases[0], Consts.UdpPortMetricsListener);
+                            await client.SendAsync(packet, packet.Length, con.Aliases[0],
+                                Consts.UdpPortMetricsListener);
                         }
 
                         _ = Task.Run(() => CalculateMetrics(con));
@@ -127,7 +132,8 @@ namespace ESR.Node {
                         .WriteArgument(arguments[0])
                         .Packet;
 
-                    await client.SendAsync(packet, packet.Length, result.RemoteEndPoint.Address.ToString(), Consts.UdpPortMetricsAckListener);
+                    await client.SendAsync(packet, packet.Length, result.RemoteEndPoint.Address.ToString(),
+                        Consts.UdpPortMetricsAckListener);
                 }
             });
 
@@ -181,14 +187,15 @@ namespace ESR.Node {
                 }
             }
 
-            var lossRate = 1 - (received / (float) s_Metrics[node.Id].Count);
+            var lossRate = 1 - (received / (float)s_Metrics[node.Id].Count);
             var avgRtt = received > 0 ? totalRtt / received : 0;
 
             Console.WriteLine($"[Node {node.Id}] Metrics - Packet Loss: {lossRate:P}, Avg RTT: {avgRtt}ms");
 
             var metrics = new Metrics(node, avgRtt, lossRate);
-            
-            await NetworkMessenger.SendAsync(Consts.TrackerIpAddress, Consts.TcpPort, OpCodes.Metrics, false, JsonSerializer.Serialize(metrics));
+
+            await NetworkMessenger.SendAsync(Consts.TrackerIpAddress, Consts.TcpPort, OpCodes.Metrics, false,
+                JsonSerializer.Serialize(metrics));
             Console.WriteLine("[Metrics] Sending metrics to tracker...");
         }
 
@@ -199,20 +206,32 @@ namespace ESR.Node {
                 while (true) {
                     var result = await client.ReceiveAsync();
                     PacketReader reader = new(result.Buffer);
+
                     if (reader.GetOpCode(out _).OpCode != OpCodes.VideoStream) continue;
 
                     Console.WriteLine($"[VideoStream] Received stream from {result.RemoteEndPoint.Address}.");
 
                     reader.GetArguments(out var args);
-                    foreach (var dest in s_ForwardTo) {
-                        var ipstr = s_Connections.Find(x => x.Id == dest)?.Aliases[0];
-                        if (string.IsNullOrEmpty(ipstr)) continue;
 
-                        var ip = IPAddress.Parse(ipstr);
-                        var ipEndpoint = new IPEndPoint(ip, Consts.UdpPort);
-                        await client.SendAsync(result.Buffer, result.Buffer.Length, ipEndpoint);
+                    if (args.Length < 5) {
+                        Console.WriteLine("[VideoStream] Invalid packet received.");   
+                        continue;
+                    }
 
-                        Console.WriteLine($"[VideoStream] Forwarded stream to {ip}.");
+                    var s_ForwardToCopy =
+                        s_ForwardTo.ToDictionary(entry => entry.Key, entry => new List<int>(entry.Value));
+
+                    foreach (var list in s_ForwardToCopy.Values) {
+                        foreach (var dest in list) {
+                            var ipstr = s_Connections.Find(x => x.Id == dest)?.Aliases[0];
+                            if (string.IsNullOrEmpty(ipstr)) continue;
+
+                            var ip = IPAddress.Parse(ipstr);
+                            var ipEndpoint = new IPEndPoint(ip, Consts.UdpPort);
+                            await client.SendAsync(result.Buffer, result.Buffer.Length, ipEndpoint);
+
+                            Console.WriteLine($"[VideoStream] Forwarded fragment to {ip}.");
+                        }
                     }
                 }
             });
