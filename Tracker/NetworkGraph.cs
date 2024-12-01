@@ -4,7 +4,7 @@ namespace ESR.Tracker;
 
 public class NetworkGraph
 {
-    public struct Connection
+    public record struct Connection
     {
         public int Id { get; init; }
         public int Weight { get; set; }
@@ -12,7 +12,7 @@ public class NetworkGraph
 
     public class Node
     {
-        private static int s_IdCounter;
+        private static int s_IdCounter = -1;
         public int Id { get; } = s_IdCounter++;
         public bool IsConnected = false;
         public bool IsPOP = false;
@@ -57,7 +57,7 @@ public class NetworkGraph
                 node.Connections.Add(new Connection
                 {
                     Id = otherNode.Id,
-                    Weight = 1
+                    Weight = 1//((node.Alias[0] == Utils.IpToInt32("10.0.8.2")) && (otherNode.Alias[0] == Utils.IpToInt32("10.0.1.2"))) ? 500 : 1
                 });
             }
         }
@@ -77,7 +77,8 @@ public class NetworkGraph
         Node? endNode = null;
 
         foreach (var node in Nodes)
-        {
+        { 
+            if (!node.IsConnected) continue;
             unvisited.Add(node);
 
             if (node.HasAlias(end)) endNode = node;
@@ -121,6 +122,25 @@ public class NetworkGraph
 
         shortestPath.Reverse();
         return shortestPath;
+    }
+    
+    public void UpdateConnectionWeight(Node node1, Node node2, int newWeight)
+    {
+        var connection1 = node1.Connections.FirstOrDefault(c => c.Id == node2.Id);
+        if (!connection1.Equals(default(Connection)))
+        {
+            var index = node1.Connections.IndexOf(connection1);
+            connection1.Weight = newWeight;
+            node1.Connections[index] = connection1;
+        }
+
+        var connection2 = node2.Connections.FirstOrDefault(c => c.Id == node1.Id);
+        if (!connection2.Equals(default(Connection)))
+        {
+            var index = node2.Connections.IndexOf(connection2);
+            connection2.Weight = newWeight;
+            node2.Connections[index] = connection2;
+        }
     }
     
     private bool TryGetNode(int id, out Node result)
