@@ -12,7 +12,7 @@ public class NetworkGraph
 
     public class Node
     {
-        private static int s_IdCounter;
+        private static int s_IdCounter = -1;
         public int Id { get; } = s_IdCounter++;
         public bool IsConnected = false;
         public bool IsPOP = false;
