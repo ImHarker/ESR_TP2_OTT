@@ -1,9 +1,9 @@
 ﻿using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using System.IO;
-using System.Net.Sockets;
 using System;
-using System.Threading.Tasks;
+using System.Collections.Generic;
+using Avalonia.Threading;
 using ESR.Shared;
 
 namespace Client.Views;
@@ -15,28 +15,42 @@ public partial class MainView : UserControl
     public MainView()
     {
         InitializeComponent();
-        AskServerForVideo();
         StartUdpStream();
     }
 
     private void StartUdpStream()
     {
-        Console.WriteLine("A");
         NetworkMessenger.StartUdpClient(Consts.UdpPort + 1, async client =>
         {
             try
             {
                 while (m_IsRunning)
                 {
+                    var receivedPackets = new Dictionary<string, List<byte[]>>();
                     var result = await client.ReceiveAsync();
-                    var frameBuffer = result.Buffer;
+                    PacketReader reader = new(result.Buffer);
 
-                    DisplayFrame(frameBuffer);
+                    if (reader.GetOpCode(out _).OpCode != OpCodes.VideoStream) continue;
+
+                    reader.GetArguments(out var args);
+
+                    if (args.Length < 5)
+                    {
+                        Console.WriteLine("[VideoStream] Invalid packet received.");
+                        continue;
+                    }
+
+                    var contentId = args[0];
+                    byte[] frameData = VideoPacket.ReadVideoPackets(contentId, result.Buffer);
+
+                    if (frameData.Length > 0) {
+                        Dispatcher.UIThread.Post(() => DisplayFrame(frameData));
+                    }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error receiving UDP stream: {ex.Message}");
+                Console.WriteLine($"Error receiving UDP stream: {ex.Message}\n{ex.StackTrace}");
             }
             finally
             {
@@ -56,11 +70,6 @@ public partial class MainView : UserControl
     {
         m_IsRunning = false;
         NetworkMessenger.DisposeUdpClient(Consts.UdpPort + 1);
-        NetworkMessenger.DisposeTcpClient(Consts.StreamerIpAddress);
     }
-
-    private static void AskServerForVideo()
-    {
-        NetworkMessenger.Send(Consts.StreamerIpAddress, Consts.TcpPort, OpCodes.StartStreaming, false);
-    }
+    
 }

@@ -11,6 +11,8 @@
         MetricsAck = 0x05,
         NodeUpdate = 0x06,
         ForwardTo = 0x07,
-        Shutdown = 0xFF
+        VideoStream = 0x08,
+        ContentMetadata = 0x09,
+        Shutdown = 0xFF,
     }
 }
