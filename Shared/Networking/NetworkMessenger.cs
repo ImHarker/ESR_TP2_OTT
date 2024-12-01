@@ -114,6 +114,8 @@ public static class NetworkMessenger
         if (UdpClients.TryGetValue(port, out _)) return;
         
         var udpClient = new UdpClient(port);
+        udpClient.Client.ReceiveBufferSize = 1024 * 1024 * 5; 
+        udpClient.Client.SendBufferSize = 1024 * 1024 * 5; 
         UdpClients[port] = udpClient;
         Task.Run(() => action(udpClient));
     }
