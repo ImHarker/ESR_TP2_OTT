@@ -173,6 +173,7 @@ namespace ESR.Tracker {
                 }
 
                 var connections = new NodeResponse {
+                    IsPop = node.IsPOP,
                     Connections = nodeConnections
                 };
 

@@ -14,6 +14,7 @@ public class NodeConnection()
 
 public struct NodeResponse
 {
+    public bool IsPop { get; init; }
     [JsonPropertyName("connections")]
     public List<NodeConnection> Connections { get; init; }
 }
