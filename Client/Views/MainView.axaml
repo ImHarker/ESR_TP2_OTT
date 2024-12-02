@@ -2,13 +2,40 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:vm="clr-namespace:Client.ViewModels"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
-             x:Class="Client.Views.MainView"
-             x:DataType="vm:ViewModelBase">
-  <Design.DataContext>
-    <vm:ViewModelBase />
-  </Design.DataContext>
+             x:Class="Client.Views.MainView">
 
-    <Image x:Name="StreamImage" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    
+    <!-- Image centered in the second row -->
+    <Border Grid.Row="0" BorderBrush="Black" BorderThickness="1">
+      <Image x:Name="StreamImage" HorizontalAlignment="Center" VerticalAlignment="Center" />
+    </Border>
+
+    <!-- StackPanel with drop-down menus in the third row -->
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Grid.Row="1" Margin="10">
+      <!-- Wrap ComboBox and Label for Pops -->
+      <StackPanel Orientation="Vertical" Margin="5">
+        <Label Content="POP" HorizontalAlignment="Center"/>
+        <ComboBox Width="150" Margin="5" x:Name="PopsComboBox" ItemsSource="{Binding Path=s_Pops}" SelectedIndex="0" SelectionChanged="OnSelectionChanged">
+          <ComboBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding [0]}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+      </StackPanel>
+
+      <!-- Wrap ComboBox and Label for Content IDs -->
+      <StackPanel Orientation="Vertical" Margin="5">
+        <Label Content="Content ID" HorizontalAlignment="Center"/>
+        <ComboBox Width="150" Margin="5" x:Name="ContentIdComboBox" ItemsSource="{Binding Path=s_ContentIds}" SelectedIndex="0" SelectionChanged="OnSelectionChanged"/>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+
 </UserControl>

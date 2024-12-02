@@ -19,6 +19,13 @@ public struct NodeResponse
     public List<NodeConnection> Connections { get; init; }
 }
 
+public struct ContentMetadata {
+    [JsonPropertyName("contentId")] 
+    public List<string> ContentIds { get; init; }
+    [JsonPropertyName("pops")] 
+    public List<string[]> Pops { get; init; }
+}
+
 public struct NodeNet
 {
     public struct Node
