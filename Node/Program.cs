@@ -34,6 +34,7 @@ namespace ESR.Node {
         public static ConcurrentDictionary<int, ConcurrentBag<MetricsPacket>> s_Metrics = new();
         public static ConcurrentDictionary<int, ConcurrentBag<MetricsPacketAck>> s_MetricsAck = new();
         public static ConcurrentDictionary<string, List<int>> s_ForwardTo = new();
+        public static bool isPop;
 
         private static void Main() {
             var bootstrap = new Thread(Bootstrap);
@@ -53,7 +54,10 @@ namespace ESR.Node {
         private static void Bootstrap() {
             Console.WriteLine("[Bootstrap] Starting bootstrap process...");
             var response = NetworkMessenger.Get(Consts.TrackerIpAddress, Consts.TcpPort, OpCodes.Bootstrap, false);
-            s_Connections = JsonSerializer.Deserialize<NodeResponse>(response.Arguments[0]).Connections;
+            var deserialized = JsonSerializer.Deserialize<NodeResponse>(response.Arguments[0]);
+            isPop = deserialized.IsPop;
+            s_Connections = deserialized.Connections;
+            Console.WriteLine($"[Bootstrap] Is POP: {isPop}");
             Console.WriteLine($"[Bootstrap] Retrieved {s_Connections.Count} connections.");
 
             while (true) {
