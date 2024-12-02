@@ -77,9 +77,33 @@ namespace ESR.Tracker {
                     var friendly = networkGraph.Nodes.Find(node =>
                         node.HasAlias(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient))));
                     if (friendly == null) {
-                        Console.WriteLine(
-                            $"[Listener] Node {tcpClient.Client.RemoteEndPoint} is not a friendly node. Closing connection...");
+                        
+                        _ = new PacketReader(tcpClient.GetStream()).GetOpCode(out var opCode).GetArguments(out var args);
+                        if (opCode != OpCodes.ContentMetadata) {
+                            Console.WriteLine(
+                                $"[Listener] Node {tcpClient.Client.RemoteEndPoint} is not a friendly node. Closing connection...");
+                            tcpClient.Close();
+                            continue;
+                        }
+                        Console.WriteLine($"[Listener] Received ContentMetadata from {tcpClient.Client.RemoteEndPoint}");
+                        var contentMetadata = new ContentMetadata{ContentIds = [], Pops = []};
+                        foreach (var node in networkGraph.Nodes) {
+                            if(node.IsPOP) {
+                                contentMetadata.Pops.Add(Utils.Int32ToIp(node.Alias));
+                            }
+                        }
+
+                        foreach (var contentId in sbts.Keys) {
+                            contentMetadata.ContentIds.Add(contentId);
+                        }
+                        
+                        var packetBuilder = new PacketBuilder().WriteOpCode(OpCodes.ContentMetadata)
+                            .WriteArgument(JsonSerializer.Serialize(contentMetadata));
+                        tcpClient.GetStream().Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
+                        
+                        Console.WriteLine($"[Listener] Sent ContentMetadata to {tcpClient.Client.RemoteEndPoint}");
                         tcpClient.Close();
+                       
                     }
                     else {
                         if (!tcpClients.TryAdd(friendly.Id, tcpClient)) {
