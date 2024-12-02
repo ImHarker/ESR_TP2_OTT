@@ -232,8 +232,10 @@ namespace ESR.Node {
                     var s_ForwardToCopy =
                         s_ForwardTo.ToDictionary(entry => entry.Key, entry => new List<int>(entry.Value));
 
-                    foreach (var list in s_ForwardToCopy.Values) {
-                        foreach (var dest in list) {
+                    var contentId = args[0];
+
+                    if (s_ForwardToCopy.TryGetValue(contentId, out var destinations)) {
+                        foreach (var dest in destinations) {
                             var ipstr = s_Connections.Find(x => x.Id == dest)?.Aliases[0];
                             if (string.IsNullOrEmpty(ipstr)) continue;
 
@@ -241,9 +243,23 @@ namespace ESR.Node {
                             var ipEndpoint = new IPEndPoint(ip, Consts.UdpPort);
                             await client.SendAsync(result.Buffer, result.Buffer.Length, ipEndpoint);
 
-                            Console.WriteLine($"[VideoStream] Forwarded fragment to {ip}.");
+                            Console.WriteLine($"[VideoStream] Forwarded fragment to {ip}. {contentId}");
                         }
                     }
+
+                    if (!isPop) continue;
+                    var popTcpClientsCopy = PopTcpClients.ToDictionary(entry => entry.Key, entry => new List<TcpClient>(entry.Value));
+                    if (popTcpClientsCopy.TryGetValue(contentId, out var tcpClients)) {
+                        foreach (var tcpClient in tcpClients) {
+                            var tcpClientIp = Utils.GetIPAddressFromTcpClient(tcpClient);
+                            var ipEndpoint = new IPEndPoint(IPAddress.Parse(tcpClientIp), Consts.UdpPort);
+                            await client.SendAsync(result.Buffer, result.Buffer.Length, ipEndpoint);
+
+                            Console.WriteLine($"[VideoStream] Forwarded fragment to POP client {tcpClientIp}. {contentId}");
+                        }
+                    }
+                    
+                    
                 }
             });
         }
