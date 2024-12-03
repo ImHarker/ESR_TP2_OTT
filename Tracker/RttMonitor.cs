@@ -39,8 +39,8 @@ public class RttMonitor
 
         if (stateChanged) NetworkStateChanged?.Invoke();
 
-        Console.WriteLine($"New RTT: {newRtt:F2}, Average: {rttAverage:F2}, StdDev: {rttStdDev:F2}, Thresholds: [{lowerThreshold:F2}, {upperThreshold:F2}]");
-        Console.WriteLine(stateChanged ? "Network state change detected!" : "Network state is stable.");
+        // Console.WriteLine($"New RTT: {newRtt:F2}, Average: {rttAverage:F2}, StdDev: {rttStdDev:F2}, Thresholds: [{lowerThreshold:F2}, {upperThreshold:F2}]");
+        // Console.WriteLine(stateChanged ? "Network state change detected!" : "Network state is stable.");
 
         return stateChanged;
     }
@@ -58,8 +58,8 @@ public class RttMonitor
 
         if (stateChanged) NetworkStateChanged?.Invoke();
 
-        Console.WriteLine($"New Packet Loss: {newPacketLoss:F2}%, Average: {packetLossAverage:F2}%, StdDev: {packetLossStdDev:F2}, Thresholds: [{lowerThreshold:F2}%, {upperThreshold:F2}%]");
-        Console.WriteLine(stateChanged ? "Network state change detected (Packet Loss)!" : "Network state is stable (Packet Loss).");
+        // Console.WriteLine($"New Packet Loss: {newPacketLoss:F2}%, Average: {packetLossAverage:F2}%, StdDev: {packetLossStdDev:F2}, Thresholds: [{lowerThreshold:F2}%, {upperThreshold:F2}%]");
+        // Console.WriteLine(stateChanged ? "Network state change detected (Packet Loss)!" : "Network state is stable (Packet Loss).");
 
         return stateChanged;
     }
