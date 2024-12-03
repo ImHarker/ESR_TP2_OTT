@@ -187,7 +187,19 @@ namespace ESR.Tracker {
                                     }
                                     
                                     // Notify new nodes of their forwarding targets
-                                    //TODO!!!!
+                                    foreach (var sbtnode in sbts[contentId].AdjacencyList.Keys) {
+                                        Console.WriteLine(
+                                            $"Node {sbtnode.Id} has children: {string.Join(", ", sbts[contentId].GetChildren(sbtnode).Select(x => x.Id))}");
+
+                                        if (!tcpClients.TryGetValue(sbtnode.Id, out var client)) continue;
+                                        Console.WriteLine($"[Tracker] Sending ForwardTo to node {sbtnode.Id}");
+                                        var istream = client.GetStream();
+                                        var packetBuilder = new PacketBuilder()
+                                            .WriteOpCode(OpCodes.ForwardTo)
+                                            .WriteArgument(contentId)
+                                            .WriteArguments(sbts[contentId].GetChildren(sbtnode).Select(x => x.Id.ToString()).ToArray());
+                                        istream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
+                                    }
                                 }
                                 break;
                             case OpCodes.StopStreaming:
@@ -202,6 +214,9 @@ namespace ESR.Tracker {
                                     var node = networkGraph.Nodes.Find(x => x.Alias.Contains(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient))));
                                     ContentDest[contentId].Remove(node);
                                     Console.WriteLine($"[Stream] Removed POP from {contentId}");
+                                    var oldSbt = sbts[contentId];
+                                    var oldNodes = oldSbt?.AdjacencyList.Keys.ToHashSet() ?? new HashSet<NetworkGraph.Node>();
+                                    var newNodes = ContentDest[contentId].ToHashSet();
                                     sbts[contentId] = SBT.BuildSBT(networkGraph.GetNode(-1), networkGraph, ContentDest[contentId]);
                                     
                                     foreach (var content in ContentDest.Keys) {
@@ -212,8 +227,34 @@ namespace ESR.Tracker {
                                         Console.WriteLine($"[Stream] Content {content} has {sbts[content].AdjacencyList.Count} nodes in SBT");
                                     }
                                     
+                                    // Notify old nodes that they no longer need to forward 
+                                    
+                                    foreach (var oldNode in oldNodes.Except(newNodes)) {
+                                        if (!tcpClients.TryGetValue(oldNode.Id, out var client)) continue;
+                                        Console.WriteLine($"[Tracker] Sending empty ForwardTo to old node {oldNode.Id}");
+                                        var istream = client.GetStream();
+                                        var packetBuilder = new PacketBuilder()
+                                            .WriteOpCode(OpCodes.ForwardTo)
+                                            .WriteArgument(contentId)
+                                            .WriteArguments(Array.Empty<string>());
+                                        istream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
+                                    }
+                                    
+                                    
                                     // Notify new nodes of their forwarding targets
-                                    //TODO!!!!
+                                    foreach (var sbtnode in sbts[contentId].AdjacencyList.Keys) {
+                                        Console.WriteLine(
+                                            $"Node {sbtnode.Id} has children: {string.Join(", ", sbts[contentId].GetChildren(sbtnode).Select(x => x.Id))}");
+
+                                        if (!tcpClients.TryGetValue(sbtnode.Id, out var client)) continue;
+                                        Console.WriteLine($"[Tracker] Sending ForwardTo to node {sbtnode.Id}");
+                                        var istream = client.GetStream();
+                                        var packetBuilder = new PacketBuilder()
+                                            .WriteOpCode(OpCodes.ForwardTo)
+                                            .WriteArgument(contentId)
+                                            .WriteArguments(sbts[contentId].GetChildren(sbtnode).Select(x => x.Id.ToString()).ToArray());
+                                        istream.Write(packetBuilder.Packet, 0, packetBuilder.Packet.Length);
+                                    }
                                 }
                                 break;
                             default:
