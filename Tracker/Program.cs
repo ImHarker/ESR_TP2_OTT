@@ -11,6 +11,9 @@ namespace ESR.Tracker {
         private static ConcurrentDictionary<int, TcpClient> tcpClients = [];
         private static ConcurrentDictionary<string, SBT> sbts = new();
         private static ConcurrentDictionary<(NetworkGraph.Node, NetworkGraph.Node), RttMonitor> rttMonitors = new();
+        
+        public static ConcurrentDictionary<string, List<NetworkGraph.Node>> ContentDest = new(); // contentId -> POPS
+
 
         private static async Task Main() {
             BootstrapGraph();
@@ -23,7 +26,7 @@ namespace ESR.Tracker {
 
             foreach (var contentId in sbts.Keys.ToList()) {
                 var oldSbt = sbts[contentId];
-                sbts[contentId] = SBT.BuildSBT(networkGraph.GetNode(-1), networkGraph);
+                sbts[contentId] = SBT.BuildSBT(networkGraph.GetNode(-1), networkGraph, ContentDest[contentId]);
                 Console.WriteLine($"SBT for content {contentId} recalculated due to network state change.");
 
                 var oldNodes = oldSbt?.AdjacencyList.Keys.ToHashSet() ?? new HashSet<NetworkGraph.Node>();
@@ -121,6 +124,8 @@ namespace ESR.Tracker {
             }
         }
 
+        private static readonly object _lock = new object();
+
         private static async Task HandleNodeConnection(TcpClient tcpClient) {
             Console.WriteLine("[Listener] Handling Node Connection");
             try {
@@ -129,7 +134,7 @@ namespace ESR.Tracker {
                 while (true) {
                     _ = new PacketReader(stream).GetOpCode(out var opCode).GetArguments(out var args);
 
-                    Console.WriteLine($"[Listener] Received OpCode: {opCode:X} - {opCode}");
+                    // Console.WriteLine($"[Listener] Received OpCode: {opCode:X} - {opCode}");
 
                     if (opCode == OpCodes.Disconnect) {
                         Console.WriteLine($"[Listener] Client {tcpClient.Client.RemoteEndPoint} disconnected");
@@ -149,9 +154,66 @@ namespace ESR.Tracker {
                                 break;
                             case OpCodes.ContentMetadata:
                                 var contentId = args[0];
+                                
+                                lock (_lock) {
+                                    if (!ContentDest.ContainsKey(contentId)) ContentDest[contentId] = new();
+                                }
+                                
                                 if (!sbts.ContainsKey(contentId)) {
-                                    sbts[contentId] = SBT.BuildSBT(networkGraph.GetNode(-1), networkGraph);
+                                    sbts[contentId] = SBT.BuildSBT(networkGraph.GetNode(-1), networkGraph, ContentDest[contentId]);
                                     Console.WriteLine($"[Listener] Created SBT for content {contentId}");
+                                }
+                                break;
+                            case OpCodes.StartStreaming:
+                                if (args.Length < 1) {
+                                    Console.WriteLine("[Stream] Invalid packet received.");
+                                    break;
+                                }
+
+                                contentId = args[0];
+                                lock (_lock) {
+                                    if (!ContentDest.ContainsKey(contentId)) ContentDest[contentId] = new();
+                                    var node = networkGraph.Nodes.Find(x => x.Alias.Contains(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient))));
+                                    ContentDest[contentId].Add(node);
+                                    Console.WriteLine($"[Stream] Added POP to {contentId}");
+                                    sbts[contentId] = SBT.BuildSBT(networkGraph.GetNode(-1), networkGraph, ContentDest[contentId]);
+
+                                    foreach (var content in ContentDest.Keys) {
+                                        Console.WriteLine($"[HandlePopConnection] Content {content} has {ContentDest[content].Count} POPS");
+                                    }
+
+                                    foreach (var content in sbts.Keys) {
+                                        Console.WriteLine($"[Stream] Content {content} has {sbts[content].AdjacencyList.Count} nodes in SBT");
+                                    }
+                                    
+                                    // Notify new nodes of their forwarding targets
+                                    //TODO!!!!
+                                }
+                                break;
+                            case OpCodes.StopStreaming:
+                                if (args.Length < 1) {
+                                    Console.WriteLine("[Stream] Invalid packet received.");
+                                    break;
+                                }
+
+                                contentId = args[0];
+                                lock (_lock) {
+                                    if (!ContentDest.ContainsKey(contentId)) continue;
+                                    var node = networkGraph.Nodes.Find(x => x.Alias.Contains(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient))));
+                                    ContentDest[contentId].Remove(node);
+                                    Console.WriteLine($"[Stream] Removed POP from {contentId}");
+                                    sbts[contentId] = SBT.BuildSBT(networkGraph.GetNode(-1), networkGraph, ContentDest[contentId]);
+                                    
+                                    foreach (var content in ContentDest.Keys) {
+                                        Console.WriteLine($"[Stream] Content {content} has {ContentDest[content].Count} POPS");
+                                    }
+                                    
+                                    foreach (var content in sbts.Keys) {
+                                        Console.WriteLine($"[Stream] Content {content} has {sbts[content].AdjacencyList.Count} nodes in SBT");
+                                    }
+                                    
+                                    // Notify new nodes of their forwarding targets
+                                    //TODO!!!!
                                 }
                                 break;
                             default:
@@ -226,7 +288,7 @@ namespace ESR.Tracker {
 
                 // Initialize SBT for each content
                 foreach (var contentId in sbts.Keys) {
-                    sbts[contentId] = SBT.BuildSBT(networkGraph.GetNode(-1), networkGraph);
+                    sbts[contentId] = SBT.BuildSBT(networkGraph.GetNode(-1), networkGraph, ContentDest[contentId]);
                     foreach (var sbtnode in sbts[contentId].AdjacencyList.Keys) {
                         Console.WriteLine(
                             $"Node {sbtnode.Id} has children: {string.Join(", ", sbts[contentId].GetChildren(sbtnode).Select(x => x.Id))}");
@@ -272,7 +334,7 @@ namespace ESR.Tracker {
                 var isAlias = node.Alias.Contains(Utils.IpToInt32(Utils.GetIPAddressFromTcpClient(tcpClient)));
                 if (!isAlias) continue;
 
-                Console.WriteLine($"[Metrics] Received Metrics from Node {node.Id}");
+                // Console.WriteLine($"[Metrics] Received Metrics from Node {node.Id}");
 
                 var metrics = JsonSerializer.Deserialize<Metrics>(args[0]);
 
