@@ -21,13 +21,13 @@ public class SBT {
         return AdjacencyList.ContainsKey(node) ? AdjacencyList[node] : new List<Node>();
     }
     
-    public static SBT BuildSBT(Node source, NetworkGraph graph)
+    public static SBT BuildSBT(Node source, NetworkGraph graph, List<Node> destList)
     {
         var sbt = new SBT { Source = source };
         var visitedNodes = new HashSet<(Node Parent, Node Child)>();
         foreach (var node in graph.Nodes)
         {
-            if (!node.IsPOP) continue; 
+            if(!destList.Contains(node)) continue;
             var path = graph.GetShortestPath(Utils.Int32ToIp(source.Alias[0]), Utils.Int32ToIp(node.Alias[0]));
 
             for (int i = 0; i < path.Count - 1; i++)

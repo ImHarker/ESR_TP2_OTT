@@ -14,8 +14,16 @@ public class NodeConnection()
 
 public struct NodeResponse
 {
+    public bool IsPop { get; init; }
     [JsonPropertyName("connections")]
     public List<NodeConnection> Connections { get; init; }
+}
+
+public struct ContentMetadata {
+    [JsonPropertyName("contentId")] 
+    public List<string> ContentIds { get; init; }
+    [JsonPropertyName("pops")] 
+    public List<string[]> Pops { get; init; }
 }
 
 public struct NodeNet
