@@ -13,9 +13,17 @@
 
   <ItemGroup>
     <None Remove="stream.jpeg" />
-    <Content Include="stream.jpeg">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
+
+  <Target Name="CopyContentFolder" AfterTargets="Build">
+    <ItemGroup>
+      <SourceFiles Include="Content\**\*" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(SourceFiles)"
+          DestinationFolder="$(OutputPath)\Content"
+          SkipUnchangedFiles="true" />
+  </Target>
+
 
 </Project>
