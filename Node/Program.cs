@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using ESR.Shared;
@@ -33,7 +34,10 @@ namespace ESR.Node {
         public static List<NodeConnection> s_Connections = new();
         public static ConcurrentDictionary<int, ConcurrentBag<MetricsPacket>> s_Metrics = new();
         public static ConcurrentDictionary<int, ConcurrentBag<MetricsPacketAck>> s_MetricsAck = new();
-        public static ConcurrentDictionary<string, List<int>> s_ForwardTo = new();
+        public static ConcurrentDictionary<string, List<int>> s_ForwardTo = new(); // contentId -> nodeIds
+        public static bool isPop;
+        public static ConcurrentDictionary<string, List<TcpClient>> PopTcpClients = new(); // contentId -> clients
+
 
         private static void Main() {
             var bootstrap = new Thread(Bootstrap);
@@ -53,9 +57,16 @@ namespace ESR.Node {
         private static void Bootstrap() {
             Console.WriteLine("[Bootstrap] Starting bootstrap process...");
             var response = NetworkMessenger.Get(Consts.TrackerIpAddress, Consts.TcpPort, OpCodes.Bootstrap, false);
-            s_Connections = JsonSerializer.Deserialize<NodeResponse>(response.Arguments[0]).Connections;
+            var deserialized = JsonSerializer.Deserialize<NodeResponse>(response.Arguments[0]);
+            isPop = deserialized.IsPop;
+            s_Connections = deserialized.Connections;
+            Console.WriteLine($"[Bootstrap] Is POP: {isPop}");
             Console.WriteLine($"[Bootstrap] Retrieved {s_Connections.Count} connections.");
 
+            if (isPop) {
+                Task.Run(PopListener);
+            }
+            
             while (true) {
                 try {
                     response = NetworkMessenger.Get(Consts.TrackerIpAddress, Consts.TcpPort, false);
@@ -214,15 +225,17 @@ namespace ESR.Node {
                     reader.GetArguments(out var args);
 
                     if (args.Length < 5) {
-                        Console.WriteLine("[VideoStream] Invalid packet received.");   
+                        Console.WriteLine("[VideoStream] Invalid packet received.");
                         continue;
                     }
 
                     var s_ForwardToCopy =
                         s_ForwardTo.ToDictionary(entry => entry.Key, entry => new List<int>(entry.Value));
 
-                    foreach (var list in s_ForwardToCopy.Values) {
-                        foreach (var dest in list) {
+                    var contentId = args[0];
+
+                    if (s_ForwardToCopy.TryGetValue(contentId, out var destinations)) {
+                        foreach (var dest in destinations) {
                             var ipstr = s_Connections.Find(x => x.Id == dest)?.Aliases[0];
                             if (string.IsNullOrEmpty(ipstr)) continue;
 
@@ -230,11 +243,137 @@ namespace ESR.Node {
                             var ipEndpoint = new IPEndPoint(ip, Consts.UdpPort);
                             await client.SendAsync(result.Buffer, result.Buffer.Length, ipEndpoint);
 
-                            Console.WriteLine($"[VideoStream] Forwarded fragment to {ip}.");
+                            Console.WriteLine($"[VideoStream] Forwarded fragment to {ip}. {contentId}");
+                        }
+                    }
+
+                    if (!isPop) continue;
+                    var popTcpClientsCopy = PopTcpClients.ToDictionary(entry => entry.Key, entry => new List<TcpClient>(entry.Value));
+                    if (popTcpClientsCopy.TryGetValue(contentId, out var tcpClients)) {
+                        foreach (var tcpClient in tcpClients) {
+                            var tcpClientIp = Utils.GetIPAddressFromTcpClient(tcpClient);
+                            var ipEndpoint = new IPEndPoint(IPAddress.Parse(tcpClientIp), Consts.UdpPort);
+                            await client.SendAsync(result.Buffer, result.Buffer.Length, ipEndpoint);
+
+                            Console.WriteLine($"[VideoStream] Forwarded fragment to POP client {tcpClientIp}. {contentId}");
+                        }
+                    }
+                    
+                    
+                }
+            });
+        }
+
+
+        private static readonly object _lock = new object();
+
+        private async static void PopListener() {
+            var ipEndPoint = new IPEndPoint(IPAddress.Any, Consts.TcpPortPopListener);
+            var listener = new TcpListener(ipEndPoint);
+            listener.Start();
+            Console.WriteLine("[PopListener] Listener started.");
+
+            try {
+                while (true) {
+                    try {
+                        var tcpClient = await listener.AcceptTcpClientAsync();
+                        Console.WriteLine("[PopListener] Accepted new client connection.");
+                        Task.Run(() => HandlePopConnection(tcpClient));
+                    }
+                    catch (Exception e) {
+                        Console.WriteLine($"[PopListener] Error: {e.Message}");
+                    }
+                }
+            }
+            finally {
+                listener.Stop();
+                Console.WriteLine("[PopListener] Listener stopped.");
+            }
+        }
+
+        private static void HandlePopConnection(TcpClient tcpClient) {
+            Console.WriteLine("[HandlePopConnection] Handling Client Connection");
+            try {
+                var stream = tcpClient.GetStream();
+
+                while (true) {
+                    _ = new PacketReader(stream).GetOpCode(out var opCode).GetArguments(out var args);
+
+                    Console.WriteLine($"[HandlePopConnection] Received OpCode: {opCode:X} - {opCode}");
+
+                    if (opCode == OpCodes.Disconnect) {
+                        Console.WriteLine(
+                            $"[HandlePopConnection] Client {tcpClient.Client.RemoteEndPoint} disconnected");
+                        lock (_lock) {
+                            foreach (var key in PopTcpClients.Keys.ToList()) {
+                                PopTcpClients[key].Remove(tcpClient);
+                                Console.WriteLine($"[HandlePopConnection] Removed client from {key}");
+                                if (PopTcpClients[key].Count == 0) {
+                                    NetworkMessenger.SendAsync(Consts.TrackerIpAddress, Consts.TcpPort,
+                                        OpCodes.StopStreaming, false, key);
+                                    Console.WriteLine($"[HandlePopConnection] Sent StopStreaming for {key}");
+                                }
+                            }
+                        }
+
+                        break;
+                    }
+                    else {
+                        switch (opCode) {
+                            case OpCodes.StartStreaming:
+                                if (args.Length < 1) {
+                                    Console.WriteLine("[HandlePopConnection] Invalid packet received.");
+                                    break;
+                                }
+
+                                var contentId = args[0];
+                                lock (_lock) {
+                                    if (!PopTcpClients.ContainsKey(contentId)) PopTcpClients[contentId] = new();
+                                    PopTcpClients[contentId].Add(tcpClient);
+                                    Console.WriteLine($"[HandlePopConnection] Added client to {contentId}");
+                                }
+
+                                if (PopTcpClients[contentId].Count == 1) {
+                                    NetworkMessenger.SendAsync(Consts.TrackerIpAddress, Consts.TcpPort,
+                                        OpCodes.StartStreaming, false, contentId);
+                                    Console.WriteLine($"[HandlePopConnection] Sent StartStreaming for {contentId}");
+                                }
+
+                                break;
+
+                            case OpCodes.StopStreaming:
+                                lock (_lock) {
+                                    foreach (var ScontentId in PopTcpClients.Keys.ToList()) {
+                                        if (PopTcpClients[ScontentId].Contains(tcpClient)) {
+                                            PopTcpClients[ScontentId].Remove(tcpClient);
+                                            Console.WriteLine(
+                                                $"[HandlePopConnection] Removed client from {ScontentId}");
+                                            if (PopTcpClients[ScontentId].Count == 0) {
+                                                NetworkMessenger.SendAsync(Consts.TrackerIpAddress, Consts.TcpPort,
+                                                    OpCodes.StopStreaming, false, ScontentId);
+                                                Console.WriteLine(
+                                                    $"[HandlePopConnection] Sent StopStreaming for {ScontentId}");
+                                            }
+                                        }
+                                    }
+                                }
+
+                                break;
+                            default:
+                                Console.WriteLine(
+                                    $"[HandlePopConnection] Unknown OpCode: {opCode} from {tcpClient.Client.RemoteEndPoint}");
+                                break;
                         }
                     }
                 }
-            });
+            }
+            catch (Exception e) {
+                Console.WriteLine($"[HandlePopConnection] Error: {e.Message}");
+            }
+            finally {
+                tcpClient.Close();
+                Console.WriteLine("[HandlePopConnection] Closed client connection.");
+            }
         }
     }
 }
